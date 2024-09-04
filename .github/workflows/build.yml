@@ -1,0 +1,31 @@
+name: Build Startset
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: '1.23.0'
+
+    - name: Build Startset
+      run: go build -o startset.exe main.go
+
+    - name: Upload Binary
+      uses: actions/upload-artifact@v3
+      with:
+        name: startset-exe
+        path: startset.exe
