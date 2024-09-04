@@ -21,8 +21,20 @@ jobs:
       with:
         go-version: '1.23.0'
 
+    - name: Cache Go modules
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
     - name: Build Startset
-      run: go build -o startset.exe main.go
+      run: |
+        go mod tidy  # Ensure all dependencies are up-to-date
+        go build -o startset.exe main.go
 
     - name: Upload Binary
       uses: actions/upload-artifact@v3
