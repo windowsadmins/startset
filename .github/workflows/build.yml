@@ -38,20 +38,22 @@ jobs:
         go mod tidy
         go build -o startset.exe main.go
 
-    # Generate a version based on the current date in YYYY.MM.DD format
+    # Generate a version based on the current date in YYYY.MM.DD format using PowerShell
     - name: Set Release Version
       id: set_version
+      shell: pwsh
       run: |
-        echo "RELEASE_VERSION=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
-        echo "RELEASE_VERSION=${{ steps.set_version.outputs.RELEASE_VERSION }}"
+        $version = Get-Date -Format "yyyy.MM.dd"
+        echo "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8
 
-    # Create a release using GitHub CLI
+    # Create a release using GitHub CLI with PowerShell syntax corrected
     - name: Create Release with GitHub CLI
+      shell: pwsh
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        gh release create "${RELEASE_VERSION}" startset.exe \
-          --title "Startset v${RELEASE_VERSION}" \
+        gh release create $env:RELEASE_VERSION startset.exe `
+          --title "Startset v$env:RELEASE_VERSION" `
           --notes "Release notes or changes in this version."
 
     - name: Upload Binary to Release
