@@ -56,10 +56,10 @@ jobs:
           --title "Startset v$env:RELEASE_VERSION" `
           --notes "Release notes or changes in this version."
 
-    - name: Upload Binary to Release
-      uses: actions/upload-release-asset@v1
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: startset.exe
-        asset_name: startset.exe
-        asset_content_type: application/octet-stream
+    # Upload Binary to the created Release
+    - name: Upload Binary using GitHub CLI
+      shell: pwsh
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release upload $env:RELEASE_VERSION startset.exe --clobber
