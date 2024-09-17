@@ -41,16 +41,14 @@ jobs:
     # Generate a version based on the current date in YYYY.MM.DD format
     - name: Set Release Version
       id: set_version
-      run: |
-        echo "RELEASE_VERSION=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
-      shell: bash
+      run: echo "RELEASE_VERSION=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
 
     # Create a release and upload the binary as an asset
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
       with:
-        tag_name: ${{ env.RELEASE_VERSION }}  # Ensure this uses the environment variable
+        tag_name: ${{ env.RELEASE_VERSION }}  # Use the generated version
         release_name: "Startset v${{ env.RELEASE_VERSION }}"
         body: "Release notes or changes in this version."
         draft: false
