@@ -46,9 +46,9 @@ jobs:
     # Create a release and upload the binary as an asset
     - name: Create Release
       id: create_release
-      uses: actions/create-release@v1
+      uses: actions/create-release@v2
       with:
-        tag_name: ${{ env.RELEASE_VERSION }}  # Use the generated version
+        tag_name: ${{ env.RELEASE_VERSION }}
         release_name: "Startset v${{ env.RELEASE_VERSION }}"
         body: "Release notes or changes in this version."
         draft: false
