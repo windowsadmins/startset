@@ -1,142 +1,129 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"flag"
+	"log"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/windows"
 )
 
 var (
-	startsetDir              = "C:\\ProgramData\\Startset"
-	bootEveryDir             = filepath.Join(startsetDir, "boot-every")
-	bootOnceDir              = filepath.Join(startsetDir, "boot-once")
-	loginWindowDir           = filepath.Join(startsetDir, "login-window")
-	loginPrivilegedEveryDir  = filepath.Join(startsetDir, "login-privileged-every")
-	loginPrivilegedOnceDir   = filepath.Join(startsetDir, "login-privileged-once")
-	loginEveryDir            = filepath.Join(startsetDir, "login-every")
-	loginOnceDir             = filepath.Join(startsetDir, "login-once")
-	onDemandDir              = filepath.Join(startsetDir, "on-demand")
-	logDir                   = filepath.Join(startsetDir, "logs")
-	logFile                  = filepath.Join(logDir, "startset.log")
-)
-
-var (
-	bootEvery           = flag.Bool("boot-every", false, "Run scripts at every system boot (admin-level).")
-	bootOnce            = flag.Bool("boot-once", false, "Run scripts once at system boot (admin-level).")
-	loginWindow         = flag.Bool("login-window", false, "Run scripts at the login window (user-level).")
-	loginPrivilegedEvery= flag.Bool("login-privileged-every", false, "Run privileged scripts every time a user logs in (admin-level).")
-	loginPrivilegedOnce = flag.Bool("login-privileged-once", false, "Run privileged scripts once at login (admin-level).")
-	onDemand            = flag.Bool("on-demand", false, "Run scripts on demand (user-level).")
-	loginEvery          = flag.Bool("login-every", false, "Run scripts every time a user logs in (user-level).")
-	loginOnce           = flag.Bool("login-once", false, "Run scripts once at login (user-level).")
-	logFlag             = flag.Bool("log", false, "Display log content.")
+	log            = logrus.New()
+	startsetDir    = "C:\\ProgramData\\Startset"
+	bootEvery      = flag.Bool("boot-every", false, "Run scripts at every system boot (admin-level).")
+	bootOnce       = flag.Bool("boot-once", false, "Run scripts once at system boot (admin-level).")
+	loginWindow    = flag.Bool("login-window", false, "Run scripts at the login window (user-level).")
+	loginPrivilegedEvery = flag.Bool("login-privileged-every", false, "Run privileged scripts every time a user logs in (admin-level).")
+	loginPrivilegedOnce  = flag.Bool("login-privileged-once", false, "Run privileged scripts once at login (admin-level).")
+	onDemand       = flag.Bool("on-demand", false, "Run scripts on demand (user-level).")
+	loginEvery     = flag.Bool("login-every", false, "Run scripts every time a user logs in (user-level).")
+	loginOnce      = flag.Bool("login-once", false, "Run scripts once at login (user-level).")
 )
 
 func main() {
 	flag.Parse()
-	ensureDirectories()
 	setupLogging()
 
-	switch {
-	case *bootEvery:
-		runScripts(bootEveryDir, false, true) // Run every boot, admin-level
-	case *bootOnce:
-		runScripts(bootOnceDir, true, true) // Run once at boot, admin-level
-	case *loginWindow:
-		runScripts(loginWindowDir, false, false) // Run at login window, user-level
-	case *loginPrivilegedEvery:
-		runScripts(loginPrivilegedEveryDir, false, true) // Privileged scripts every login, admin-level
-	case *loginPrivilegedOnce:
-		runScripts(loginPrivilegedOnceDir, true, true) // Privileged scripts once per login, admin-level
-	case *loginEvery:
-		runScripts(loginEveryDir, false, false) // Run every login, user-level
-	case *loginOnce:
-		runScripts(loginOnceDir, true, false) // Run once per login, user-level
-	case *onDemand:
-		runScripts(onDemandDir, false, false) // Run on demand, user-level by default
-	case *logFlag:
-		displayLog()
-	default:
-		fmt.Println("Usage: startset --boot-every | --boot-once | --login-window | --login-privileged-every | --login-privileged-once | --on-demand | --login-every | --login-once | --log")
-	}
-}
+	ensureDirectories()
 
-func ensureDirectories() {
-	directories := []string{bootEveryDir, bootOnceDir, loginWindowDir, loginPrivilegedEveryDir, loginPrivilegedOnceDir, loginEveryDir, loginOnceDir, onDemandDir, logDir}
-	for _, dir := range directories {
-		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-			log.Fatalf("Failed to create directory %s: %v", dir, err)
-		}
+	log.Info("Startset application initialized")
+
+	if *bootEvery {
+		runScripts(filepath.Join(startsetDir, "boot-every"), true)
+	}
+	if *bootOnce {
+		runScripts(filepath.Join(startsetDir, "boot-once"), true)
+	}
+	if *loginWindow {
+		runScripts(filepath.Join(startsetDir, "login-window"), false)
+	}
+	if *loginPrivilegedEvery {
+		runScripts(filepath.Join(startsetDir, "login-privileged-every"), true)
+	}
+	if *loginPrivilegedOnce {
+		runScripts(filepath.Join(startsetDir, "login-privileged-once"), true)
+	}
+	if *onDemand {
+		runScripts(filepath.Join(startsetDir, "on-demand"), false)
+	}
+	if *loginEvery {
+		runScripts(filepath.Join(startsetDir, "login-every"), false)
+	}
+	if *loginOnce {
+		runScripts(filepath.Join(startsetDir, "login-once"), false)
 	}
 }
 
 func setupLogging() {
-	logFile, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(filepath.Join(startsetDir, "startset.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
+		log.Fatal("Failed to open log file: ", err)
 	}
-	log.SetOutput(logFile)
-	log.Println("Startset initialized")
+	log.Out = file
+	log.Formatter = &logrus.JSONFormatter{}
 }
 
-func runScripts(dir string, deleteAfterRun bool, requireAdmin bool) {
+func ensureDirectories() {
+	directories := []string{
+		filepath.Join(startsetDir, "boot-every"),
+		filepath.Join(startsetDir, "boot-once"),
+		filepath.Join(startsetDir, "login-window"),
+		filepath.Join(startsetDir, "login-privileged-every"),
+		filepath.Join(startsetDir, "login-privileged-once"),
+		filepath.Join(startsetDir, "on-demand"),
+		filepath.Join(startsetDir, "login-every"),
+		filepath.Join(startsetDir, "login-once"),
+	}
+	for _, dir := range directories {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			log.WithField("directory", dir).Error("Failed to create directory: ", err)
+		}
+	}
+}
+
+func runScripts(dir string, requireAdmin bool) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.ps1"))
 	if err != nil {
-		log.Fatalf("Failed to list scripts in %s: %v", dir, err)
+		log.WithField("directory", dir).Error("Failed to list scripts: ", err)
+		return
 	}
-
 	for _, script := range files {
-		log.Printf("Running script: %s", script)
 		if requireAdmin && !isAdmin() {
-			err := runWithAdminPrivileges(script)
-			if err != nil {
-				log.Printf("Error running script %s with admin privileges: %v", script, err)
+			log.WithField("script", script).Info("Running script with admin privileges")
+			if err := runWithAdminPrivileges(script); err != nil {
+				log.WithField("script", script).Error("Failed to run script with admin privileges: ", err)
 			}
 		} else {
-			err := exec.Command("powershell.exe", "-ExecutionPolicy", "Bypass", "-File", script).Run()
-			if err != nil {
-				log.Printf("Error running script %s: %v", script, err)
-			} else {
-				log.Printf("Successfully ran script: %s", script)
-				if deleteAfterRun {
-					os.Remove(script)
-				}
+			log.WithField("script", script).Info("Running script")
+			if err := exec.Command("powershell.exe", "-ExecutionPolicy", "Bypass", "-File", script).Run(); err != nil {
+				log.WithField("script", script).Error("Failed to run script: ", err)
 			}
 		}
 	}
 }
 
-func displayLog() {
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		log.Fatalf("Failed to read log file: %v", err)
-	}
-	fmt.Println(string(data))
-}
-
 func isAdmin() bool {
 	var sid *windows.SID
-	var err error
-
-	if sid, err = windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid); err != nil {
+	// Check if the current user is an admin
+	if err := windows.AllocateAndInitializeSid(&windows.SECURITY_NT_AUTHORITY, 2, windows.SECURITY_BUILTIN_DOMAIN_RID, windows.DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &sid); err != nil {
+		log.Error("Failed to initialize SID: ", err)
 		return false
 	}
+	defer windows.FreeSid(sid)
 	token := windows.Token(0)
-	isMember, err := token.IsMember(sid)
+	isAdmin, err := token.IsMember(sid)
 	if err != nil {
-		log.Printf("Error checking admin status: %v", err)
+		log.Error("Failed to determine membership: ", err)
+		return false
 	}
-	return isMember
+	return isAdmin
 }
 
 func runWithAdminPrivileges(script string) error {
 	cmd := exec.Command("powershell.exe", "-ExecutionPolicy", "Bypass", "-File", script)
-	cmd.SysProcAttr = &windows.SysProcAttr{
-		CreationFlags: windows.CREATE_NEW_CONSOLE | windows.CREATE_UNICODE_ENVIRONMENT,
-	}
+	cmd.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NEW_CONSOLE}
 	return cmd.Run()
 }
