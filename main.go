@@ -1,26 +1,26 @@
 package main
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
-	"flag"
-	"log"
-	"github.com/sirupsen/logrus"
-	"golang.org/x/sys/windows"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "flag"
+    stdlog "log" // Use stdlog for the standard log package
+    logrus "github.com/sirupsen/logrus" // Use logrus for the logrus package
+    "golang.org/x/sys/windows"
 )
 
 var (
-	log            = logrus.New()
-	startsetDir    = "C:\\ProgramData\\Startset"
-	bootEvery      = flag.Bool("boot-every", false, "Run scripts at every system boot (admin-level).")
-	bootOnce       = flag.Bool("boot-once", false, "Run scripts once at system boot (admin-level).")
-	loginWindow    = flag.Bool("login-window", false, "Run scripts at the login window (user-level).")
-	loginPrivilegedEvery = flag.Bool("login-privileged-every", false, "Run privileged scripts every time a user logs in (admin-level).")
-	loginPrivilegedOnce  = flag.Bool("login-privileged-once", false, "Run privileged scripts once at login (admin-level).")
-	onDemand       = flag.Bool("on-demand", false, "Run scripts on demand (user-level).")
-	loginEvery     = flag.Bool("login-every", false, "Run scripts every time a user logs in (user-level).")
-	loginOnce      = flag.Bool("login-once", false, "Run scripts once at login (user-level).")
+    log                  = logrus.New() // This initializes a logrus logger
+    startsetDir          = "C:\\ProgramData\\Startset"
+    bootEvery            = flag.Bool("boot-every", false, "Run scripts at every system boot (admin-level).")
+    bootOnce             = flag.Bool("boot-once", false, "Run scripts once at system boot (admin-level).")
+    loginWindow          = flag.Bool("login-window", false, "Run scripts at the login window (user-level).")
+    loginPrivilegedEvery = flag.Bool("login-privileged-every", false, "Run privileged scripts every time a user logs in (admin-level).")
+    loginPrivilegedOnce  = flag.Bool("login-privileged-once", false, "Run privileged scripts once at login (admin-level).")
+    onDemand             = flag.Bool("on-demand", false, "Run scripts on demand (user-level).")
+    loginEvery           = flag.Bool("login-every", false, "Run scripts every time a user logs in (user-level).")
+    loginOnce            = flag.Bool("login-once", false, "Run scripts once at login (user-level).")
 )
 
 func main() {
@@ -58,12 +58,12 @@ func main() {
 }
 
 func setupLogging() {
-	file, err := os.OpenFile(filepath.Join(startsetDir, "startset.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatal("Failed to open log file: ", err)
-	}
-	log.Out = file
-	log.Formatter = &logrus.JSONFormatter{}
+    file, err := os.OpenFile(filepath.Join(startsetDir, "startset.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+    if err != nil {
+        log.Fatalf("Failed to open log file: %v", err) // Using logrus for fatal logging
+    }
+    log.Out = file
+    log.Formatter = &logrus.JSONFormatter{}
 }
 
 func ensureDirectories() {
