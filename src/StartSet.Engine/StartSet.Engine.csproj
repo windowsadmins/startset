@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>StartSet.Engine</RootNamespace>
+    <AssemblyName>StartSet.Engine</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\StartSet.Core\StartSet.Core.csproj" />
+    <ProjectReference Include="..\StartSet.Infrastructure\StartSet.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
