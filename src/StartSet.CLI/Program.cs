@@ -18,7 +18,15 @@ public class Program
         if (args.Length == 1 && (args[0] == "--version" || args[0] == "-V"))
         {
             var version = Assembly.GetExecutingAssembly().GetName().Version;
-            Console.WriteLine(version != null ? $"{version.Major}.{version.Minor}.{version.Build}.{version.Revision}" : "0.0.0.0");
+            if (version != null)
+            {
+                // Format as YYYY.MM.DD.HHMM with leading zeros
+                Console.WriteLine($"{version.Major}.{version.Minor:D2}.{version.Build:D2}.{version.Revision:D4}");
+            }
+            else
+            {
+                Console.WriteLine("0.0.0.0");
+            }
             return 0;
         }
 
