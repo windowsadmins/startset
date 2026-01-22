@@ -74,7 +74,7 @@ public class TriggerWatcherWorker : BackgroundService
         var payloadTypes = GetPayloadTypesForTrigger(e.FullPath);
         if (payloadTypes.Length == 0)
         {
-            StartSetLogger.Warning("Unknown trigger file: {File}", e.Name);
+            StartSetLogger.Warning("Unknown trigger file: {File}", e.Name ?? "Unknown");
             return;
         }
 
@@ -93,7 +93,7 @@ public class TriggerWatcherWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            StartSetLogger.Error(ex, "Error processing trigger file: {File}", e.Name);
+            StartSetLogger.Error(ex, "Error processing trigger file: {File}", e.Name ?? "Unknown");
         }
     }
 
