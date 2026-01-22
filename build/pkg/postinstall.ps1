@@ -1,4 +1,3 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
     Post-installation script for StartSet package.
@@ -7,8 +6,6 @@
     This script runs after StartSet files have been deployed.
     It creates necessary directories and installs the StartSet Windows service.
 #>
-
-param()
 
 $ErrorActionPreference = 'Stop'
 

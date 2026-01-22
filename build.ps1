@@ -1,4 +1,3 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
     Builds the StartSet project with enterprise code signing and MSI/NuGet packaging.
