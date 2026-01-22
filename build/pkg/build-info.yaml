@@ -1,0 +1,8 @@
+product:
+  name: StartSet
+  version: {{VERSION}}
+  developer: Windows Admins Open Source
+  identifier: com.github.windowsadmins.startset
+  description: Automatically process packages and scripts during boot, login, or on demand on Windows.
+postinstall_action: none
+install_location: C:\Program Files\StartSet

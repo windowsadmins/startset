@@ -78,6 +78,19 @@ public class Program
         rootCommand.AddCommand(RemoveCommand.Create(preferencesService));
         rootCommand.AddCommand(ListCommand.Create(preferencesService));
 
+        // Ignored user commands (matching outset)
+        rootCommand.AddCommand(IgnoredUserCommand.CreateAdd(preferencesService));
+        rootCommand.AddCommand(IgnoredUserCommand.CreateRemove(preferencesService));
+        rootCommand.AddCommand(IgnoredUserCommand.CreateList(preferencesService));
+
+        // Override commands (matching outset)
+        rootCommand.AddCommand(OverrideCommand.CreateAdd(preferencesService));
+        rootCommand.AddCommand(OverrideCommand.CreateRemove(preferencesService));
+        rootCommand.AddCommand(OverrideCommand.CreateList(preferencesService));
+
+        // Checksum command (matching outset)
+        rootCommand.AddCommand(ChecksumCommand.Create(preferencesService));
+
         return rootCommand;
     }
 }

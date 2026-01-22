@@ -107,6 +107,22 @@ public class StartSetPreferences
     public bool LogScriptOutput { get; set; } = true;
 
     /// <summary>
+    /// List of usernames to ignore for login script execution.
+    /// Scripts will not run for these users.
+    /// Default: empty
+    /// </summary>
+    [YamlMember(Alias = "ignored_users")]
+    public List<string> IgnoredUsers { get; set; } = [];
+
+    /// <summary>
+    /// List of script paths to override (force re-run of run-once scripts).
+    /// Scripts in this list will run again even if previously executed.
+    /// Default: empty
+    /// </summary>
+    [YamlMember(Alias = "overrides")]
+    public List<string> Overrides { get; set; } = [];
+
+    /// <summary>
     /// Returns default preferences.
     /// </summary>
     public static StartSetPreferences Default => new();

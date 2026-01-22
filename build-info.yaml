@@ -1,7 +1,0 @@
-product:
-  name: Startset
-  version: 2024.10.14
-  developer: EmilyCarrU
-  identifier: com.github.windowsadmins.startset
-postinstall_action: none
-install_location: C:\ProgramData\Startset

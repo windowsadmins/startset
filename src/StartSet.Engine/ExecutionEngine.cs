@@ -57,6 +57,13 @@ public class ExecutionEngine
         var results = new List<ExecutionResult>();
         var prefs = _preferencesService.Preferences;
 
+        // Check if user is in ignored list (for user-context payload types)
+        if (!string.IsNullOrEmpty(username) && IsUserIgnored(username, prefs))
+        {
+            StartSetLogger.Information("User {Username} is in ignored_users list, skipping execution", username);
+            return results;
+        }
+
         StartSetLogger.Information("Starting execution for payload types: {Types}",
             string.Join(", ", payloadTypes.Select(p => p.ToString())));
 
@@ -130,11 +137,18 @@ public class ExecutionEngine
             ? new RunOnceTracker(payloadType.IsUserContext() ? username : null)
             : null;
 
-        // Filter already-executed scripts
+        // Filter already-executed scripts (respecting overrides)
         foreach (var script in scripts)
         {
             if (payloadType.IsRunOnce() && runOnceTracker != null)
             {
+                // Check if script is overridden (force re-run)
+                if (IsScriptOverridden(script.FilePath, prefs))
+                {
+                    StartSetLogger.Information("Script {Script} is in overrides list, will re-run", script.FileName);
+                    continue; // Don't skip, even if previously executed
+                }
+
                 if (runOnceTracker.HasExecuted(script.FilePath, script.Checksum))
                 {
                     script.ShouldSkip = true;
@@ -156,7 +170,7 @@ public class ExecutionEngine
             if (script.ShouldSkip)
             {
                 result = ExecutionResult.Skipped(script, script.SkipReason ?? "Unknown reason");
-                StartSetLogger.Debug("Skipping script: {Script} - {Reason}", script.FileName, script.SkipReason);
+                StartSetLogger.Debug("Skipping script: {Script} - {Reason}", script.FileName, script.SkipReason ?? "Unknown");
             }
             else
             {
@@ -332,5 +346,30 @@ public class ExecutionEngine
                 StartSetLogger.Warning("Failed to delete trigger file {File}: {Error}", triggerFile, ex.Message);
             }
         }
+    }
+
+    /// <summary>
+    /// Checks if a user is in the ignored users list.
+    /// </summary>
+    private static bool IsUserIgnored(string username, StartSetPreferences prefs)
+    {
+        if (prefs.IgnoredUsers.Count == 0)
+            return false;
+
+        return prefs.IgnoredUsers.Any(u =>
+            string.Equals(u, username, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Checks if a script is in the overrides list (should re-run even if executed before).
+    /// </summary>
+    private static bool IsScriptOverridden(string scriptPath, StartSetPreferences prefs)
+    {
+        if (prefs.Overrides.Count == 0)
+            return false;
+
+        var fileName = Path.GetFileName(scriptPath).ToLowerInvariant();
+        return prefs.Overrides.Any(o =>
+            string.Equals(Path.GetFileName(o).ToLowerInvariant(), fileName, StringComparison.OrdinalIgnoreCase));
     }
 }

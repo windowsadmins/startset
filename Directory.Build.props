@@ -14,8 +14,8 @@
     
     <!-- Version info -->
     <Product>StartSet</Product>
-    <Company>WindowsAdmins</Company>
-    <Copyright>Copyright © WindowsAdmins 2024-2025</Copyright>
+    <Company>Windows Admins Open Source</Company>
+    <Copyright>Copyright © Windows Admins Open Source 2024-2025</Copyright>
     <Description>Outset for Windows - Automatic script execution at boot, login, and on-demand</Description>
     
     <!-- Assembly info -->
