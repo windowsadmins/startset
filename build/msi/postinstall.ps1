@@ -2,6 +2,18 @@ Start-Transcript -Path "C:\ProgramData\ManagedScripts\logs\install_log.txt" -App
 # Define paths - matching Paths.cs constants
 $startsetDir = "C:\ProgramData\ManagedScripts"
 $installDir = "C:\Program Files\StartSet"
+
+# Add install directory to system PATH if not already present
+Write-Host "Configuring system PATH..."
+$currentPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::Machine)
+if ($currentPath -notlike "*$installDir*") {
+    $newPath = "$currentPath;$installDir"
+    [Environment]::SetEnvironmentVariable("PATH", $newPath, [EnvironmentVariableTarget]::Machine)
+    Write-Host "  Added $installDir to system PATH"
+} else {
+    Write-Host "  $installDir already in system PATH"
+}
+
 $bootEveryDir = Join-Path $startsetDir "boot-every"
 $bootOnceDir = Join-Path $startsetDir "boot-once"
 $loginWindowDir = Join-Path $startsetDir "login-window"
