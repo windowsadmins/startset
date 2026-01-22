@@ -89,6 +89,20 @@ startset add myscript.ps1 --type boot-every
 # Remove a script
 startset remove myscript.ps1 --type boot-every
 
+# Manage ignored users (matching outset)
+startset add-ignored-user bob jane
+startset remove-ignored-user bob
+startset list-ignored-users
+
+# Manage script overrides (force re-run of run-once scripts)
+startset add-override myscript.ps1
+startset remove-override myscript.ps1 --clear-runonce
+startset list-overrides
+
+# Compute checksums (matching outset)
+startset checksum myscript.ps1
+startset checksum all --record
+
 # Show version
 startset --version
 ```
@@ -130,6 +144,15 @@ login_delay: 0
 
 # Log script output to individual files
 log_script_output: true
+
+# Users to ignore for login script execution
+ignored_users: []
+  # - serviceaccount
+  # - kiosk
+
+# Scripts to force re-run (override run-once tracking)
+overrides: []
+  # - myscript.ps1
 ```
 
 ## Trigger Files

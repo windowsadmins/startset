@@ -88,7 +88,7 @@ public class LogonEventWorker : BackgroundService
                 return;
 
             var fullUsername = string.IsNullOrEmpty(domain) ? username : $"{domain}\\{username}";
-            StartSetLogger.Information("Logon detected for user: {User} (LogonType: {Type})", fullUsername, logonType);
+            StartSetLogger.Information("Logon detected for user: {User} (LogonType: {Type})", fullUsername ?? "Unknown", logonType ?? "Unknown");
 
             // Add configurable delay if set
             var delay = _preferencesService.Preferences.LoginDelay;

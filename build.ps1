@@ -48,6 +48,9 @@
 .PARAMETER MsiOnly
     Create MSI packages only using existing binaries (skip build and NUPKG)
 
+.PARAMETER PkgOnly
+    Create .pkg packages only using existing binaries (direct binary payload)
+
 .PARAMETER Clean
     Clean all build artifacts before building
 
@@ -93,6 +96,10 @@
     # Create only MSI packages from existing binaries
 
 .EXAMPLE
+    .\build.ps1 -PkgOnly
+    # Create only .pkg packages from existing binaries
+
+.EXAMPLE
     .\build.ps1 -IntuneWin
     # Full build including .intunewin packages
 
@@ -115,6 +122,7 @@ param(
     [switch]$PackageOnly,
     [switch]$NupkgOnly,
     [switch]$MsiOnly,
+    [switch]$PkgOnly,
     [switch]$Clean,
     [switch]$Test,
     [ValidateSet('Debug', 'Release')]
@@ -183,6 +191,46 @@ $script:SrcDir = Join-Path $RootDir 'src'
 function Test-Command {
     param ([string]$Command)
     return $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
+}
+
+function Test-CimiPkg {
+    $c = Get-Command cimipkg.exe -ErrorAction SilentlyContinue
+    if ($c) { return $true }
+    
+    # Check in common locations
+    $possiblePaths = @(
+        "$PSScriptRoot\..\CimianToolsGo\release\x64\cimipkg.exe",
+        "$PSScriptRoot\..\..\packages\CimianToolsGo\release\x64\cimipkg.exe",
+        "C:\Program Files\Cimian\cimipkg.exe"
+    )
+    
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            return $true
+        }
+    }
+    
+    return $false
+}
+
+function Get-CimiPkgPath {
+    $c = Get-Command cimipkg.exe -ErrorAction SilentlyContinue
+    if ($c) { return $c.Source }
+    
+    # Check in common locations
+    $possiblePaths = @(
+        "$PSScriptRoot\..\CimianToolsGo\release\x64\cimipkg.exe",
+        "$PSScriptRoot\..\..\packages\CimianToolsGo\release\x64\cimipkg.exe",
+        "C:\Program Files\Cimian\cimipkg.exe"
+    )
+    
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+    
+    throw "cimipkg.exe not found. Build CimianToolsGo first or add cimipkg to PATH."
 }
 
 function Get-SigningCertThumbprint {
@@ -501,6 +549,86 @@ function Publish-Binary {
     Write-BuildLog "$Name ($RuntimeIdentifier) built successfully" -Level 'SUCCESS'
 }
 
+function Test-CimiPkg {
+    $c = Get-Command cimipkg.exe -ErrorAction SilentlyContinue
+    if ($c) { return $true }
+    
+    # Check in common locations
+    $possiblePaths = @(
+        "$PSScriptRoot\..\CimianToolsGo\release\x64\cimipkg.exe",
+        "$PSScriptRoot\..\..\packages\CimianToolsGo\release\x64\cimipkg.exe",
+        "C:\Program Files\Cimian\cimipkg.exe"
+    )
+    
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            return $true
+        }
+    }
+    
+    return $false
+}
+
+function Get-CimiPkgPath {
+    $c = Get-Command cimipkg.exe -ErrorAction SilentlyContinue
+    if ($c) { return $c.Source }
+    
+    # Check in common locations
+    $possiblePaths = @(
+        "$PSScriptRoot\..\CimianToolsGo\release\x64\cimipkg.exe",
+        "$PSScriptRoot\..\..\packages\CimianToolsGo\release\x64\cimipkg.exe",
+        "C:\Program Files\Cimian\cimipkg.exe"
+    )
+    
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+    
+    throw "cimipkg.exe not found. Build CimianToolsGo first or add cimipkg to PATH."
+}
+
+function Test-CimiPkg {
+    $c = Get-Command cimipkg.exe -ErrorAction SilentlyContinue
+    if ($c) { return $true }
+    
+    # Check in common locations
+    $possiblePaths = @(
+        "$PSScriptRoot\..\CimianToolsGo\release\x64\cimipkg.exe",
+        "$PSScriptRoot\..\..\packages\CimianToolsGo\release\x64\cimipkg.exe",
+        "C:\Program Files\Cimian\cimipkg.exe"
+    )
+    
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            return $true
+        }
+    }
+    
+    return $false
+}
+
+function Get-CimiPkgPath {
+    $c = Get-Command cimipkg.exe -ErrorAction SilentlyContinue
+    if ($c) { return $c.Source }
+    
+    # Check in common locations
+    $possiblePaths = @(
+        "$PSScriptRoot\..\CimianToolsGo\release\x64\cimipkg.exe",
+        "$PSScriptRoot\..\..\packages\CimianToolsGo\release\x64\cimipkg.exe",
+        "C:\Program Files\Cimian\cimipkg.exe"
+    )
+    
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+    
+    throw "cimipkg.exe not found. Build CimianToolsGo first or add cimipkg to PATH."
+}
+
 function Build-AllBinaries {
     param([hashtable]$Version)
     
@@ -679,42 +807,35 @@ function Build-NuGetPackage {
         return $null
     }
     
-    $nuspecDir = Join-Path $BuildDir "nupkg"
-    
-    # Create nuspec directory if needed
-    if (-not (Test-Path $nuspecDir)) {
-        New-Item -ItemType Directory -Path $nuspecDir -Force | Out-Null
+    # Use template from build/nupkg/
+    $templatePath = Join-Path $BuildDir "nupkg\StartSet.nuspec.template"
+    if (-not (Test-Path $templatePath)) {
+        Write-BuildLog "NuGet template not found: $templatePath" "ERROR"
+        return $null
     }
     
-    $nuspecPath = Join-Path $nuspecDir "StartSet.$Arch.nuspec"
+    # Create temp nuspec directory
+    $tempNuspecDir = Join-Path $env:TEMP "StartSet-nupkg-$Arch-$(Get-Random)"
+    New-Item -ItemType Directory -Path $tempNuspecDir -Force | Out-Null
     
-    # Create nuspec file
-    $nuspecContent = @"
-<?xml version="1.0"?>
-<package>
-  <metadata>
-    <id>StartSet-$Arch</id>
-    <version>$($Version.Semantic)</version>
-    <title>StartSet ($Arch)</title>
-    <authors>WindowsAdmins</authors>
-    <owners>WindowsAdmins</owners>
-    <description>Windows port of macadmins/outset - Script automation at boot, login, and on-demand - $Arch binaries</description>
-    <projectUrl>https://github.com/windowsadmins/startset</projectUrl>
-    <license type="expression">MIT</license>
-    <requireLicenseAcceptance>false</requireLicenseAcceptance>
-    <tags>outset scripts automation boot login windows enterprise intune</tags>
-  </metadata>
-  <files>
-    <file src="..\..\release\$Arch\*.exe" target="tools" />
-  </files>
-</package>
-"@
+    $nuspecPath = Join-Path $tempNuspecDir "StartSet.$Arch.nuspec"
+    
+    # Read template and replace placeholders
+    $nuspecContent = Get-Content $templatePath -Raw
+    $nuspecContent = $nuspecContent -replace '{{VERSION}}', $Version.Semantic
+    $nuspecContent = $nuspecContent -replace '{{ARCHITECTURE}}', $Arch
+    
     $nuspecContent | Set-Content -Path $nuspecPath -Encoding UTF8
+    
+    Write-BuildLog "Created nuspec from template for $Arch" "INFO"
     
     $nupkgOutput = Join-Path $OutputDir "StartSet-$Arch.$($Version.Semantic).nupkg"
     
     # Pack
-    & nuget pack $nuspecPath -OutputDirectory $OutputDir -BasePath $nuspecDir -NoDefaultExcludes
+    & nuget pack $nuspecPath -OutputDirectory $OutputDir -BasePath $tempNuspecDir -NoDefaultExcludes
+    
+    # Cleanup temp directory
+    Remove-Item $tempNuspecDir -Recurse -Force -ErrorAction SilentlyContinue
     
     if ($LASTEXITCODE -ne 0) {
         Write-BuildLog "NuGet pack failed for $Arch" "WARNING"
@@ -739,6 +860,161 @@ function Build-NuGetPackage {
     }
     
     Write-BuildLog "NuGet package not found after build" "WARNING"
+    return $null
+}
+
+#endregion
+
+#region PKG Packaging Functions
+
+function Build-PkgPackage {
+    param(
+        [Parameter(Mandatory)][string]$Arch,
+        [Parameter(Mandatory)][hashtable]$Version,
+        [switch]$Sign,
+        [string]$Thumbprint,
+        [string]$Store
+    )
+    
+    Write-BuildLog "Creating .pkg package for $Arch..." "INFO"
+    
+    # Check for cimipkg
+    if (-not (Test-CimiPkg)) {
+        Write-BuildLog "cimipkg.exe not found. Build CimianToolsGo first or add cimipkg to PATH." "ERROR"
+        return $null
+    }
+    
+    $cimipkgPath = Get-CimiPkgPath
+    Write-BuildLog "Using cimipkg: $cimipkgPath" "INFO"
+    
+    $binDir = Join-Path $OutputDir $Arch
+    
+    if (-not (Test-Path $binDir)) {
+        Write-BuildLog "Binary directory not found: $binDir" "ERROR"
+        return $null
+    }
+    
+    # Create temporary .pkg build directory
+    $pkgTempDir = Join-Path $OutputDir "pkg_$Arch"
+    if (Test-Path $pkgTempDir) {
+        Remove-Item $pkgTempDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $pkgTempDir -Force | Out-Null
+    
+    # Create payload directory and copy binaries
+    $payloadDir = Join-Path $pkgTempDir "payload"
+    New-Item -ItemType Directory -Path $payloadDir -Force | Out-Null
+    
+    Write-BuildLog "Copying StartSet binaries for $Arch architecture to .pkg payload..." "INFO"
+    $binaries = @(
+        "startset.exe",
+        "StartSetService.exe"
+    )
+    
+    foreach ($binary in $binaries) {
+        $sourcePath = Join-Path $binDir $binary
+        if (Test-Path $sourcePath) {
+            Copy-Item $sourcePath $payloadDir -Force
+            Write-BuildLog "Copied $binary to .pkg payload" "INFO"
+        } else {
+            Write-BuildLog "Binary not found: $sourcePath" "WARNING"
+        }
+    }
+    
+    # Create scripts directory and copy pre/postinstall scripts
+    $scriptsDir = Join-Path $pkgTempDir "scripts"
+    New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
+    
+    # Copy and process postinstall script from build/pkg/ template
+    $postinstallTemplatePath = Join-Path $BuildDir "pkg\postinstall.ps1"
+    if (Test-Path $postinstallTemplatePath) {
+        $postinstallContent = Get-Content $postinstallTemplatePath -Raw
+        $postinstallContent = $postinstallContent -replace '\{\{VERSION\}\}', $Version.Full
+        $postinstallContent | Set-Content (Join-Path $scriptsDir "postinstall.ps1") -Encoding UTF8
+        Write-BuildLog "Added postinstall.ps1 script to .pkg" "INFO"
+    } else {
+        Write-BuildLog "Postinstall template not found: $postinstallTemplatePath" "WARNING"
+    }
+    
+    # Copy and process preinstall script from build/pkg/ template
+    $preinstallTemplatePath = Join-Path $BuildDir "pkg\preinstall.ps1"
+    if (Test-Path $preinstallTemplatePath) {
+        $preinstallContent = Get-Content $preinstallTemplatePath -Raw
+        $preinstallContent = $preinstallContent -replace '\{\{VERSION\}\}', $Version.Full
+        $preinstallContent | Set-Content (Join-Path $scriptsDir "preinstall.ps1") -Encoding UTF8
+        Write-BuildLog "Added preinstall.ps1 script to .pkg" "INFO"
+    } else {
+        Write-BuildLog "Preinstall template not found: $preinstallTemplatePath" "WARNING"
+    }
+    
+    # Copy and process build-info.yaml from build/pkg/ template
+    $buildInfoTemplatePath = Join-Path $BuildDir "pkg\build-info.yaml"
+    if (Test-Path $buildInfoTemplatePath) {
+        $buildInfoContent = Get-Content $buildInfoTemplatePath -Raw
+        $buildInfoContent = $buildInfoContent -replace '\{\{VERSION\}\}', $Version.Full
+        $buildInfoContent = $buildInfoContent -replace '\{\{ARCHITECTURE\}\}', $Arch
+        
+        if ($Sign -and $Thumbprint) {
+            $buildInfoContent += @"
+
+code_signing:
+  enabled: true
+  certificate_thumbprint: $Thumbprint
+  certificate_store: $Store
+"@
+        }
+        
+        $buildInfoPath = Join-Path $pkgTempDir "build-info.yaml"
+        $buildInfoContent | Set-Content $buildInfoPath -Encoding UTF8
+        Write-BuildLog "Created build-info.yaml for .pkg" "INFO"
+    } else {
+        Write-BuildLog "build-info.yaml template not found: $buildInfoTemplatePath" "ERROR"
+        return $null
+    }
+    
+    # Build the .pkg package using cimipkg
+    Write-BuildLog "Building .pkg package for $Arch architecture..." "INFO"
+    
+    try {
+        $cimipkgArgs = @("--verbose", $pkgTempDir)
+        
+        $process = Start-Process -FilePath $cimipkgPath -ArgumentList $cimipkgArgs -Wait -NoNewWindow -PassThru
+        
+        if ($process.ExitCode -eq 0) {
+            Write-BuildLog ".pkg package created successfully for ${Arch}" "SUCCESS"
+            
+            # Look for the created .pkg file in the build subdirectory
+            $buildDir = Join-Path $pkgTempDir "build"
+            if (Test-Path $buildDir) {
+                $createdPkgFiles = Get-ChildItem -Path $buildDir -Filter "*.pkg"
+                foreach ($pkgFile in $createdPkgFiles) {
+                    # Move the .pkg to the release directory with proper naming
+                    $pkgName = "StartSet-$($Version.Full)-$Arch.pkg"
+                    $finalPkgPath = Join-Path $OutputDir $pkgName
+                    Move-Item $pkgFile.FullName $finalPkgPath -Force
+                    
+                    $pkgSize = (Get-Item $finalPkgPath).Length / 1MB
+                    Write-BuildLog ".pkg created: $pkgName ($($pkgSize.ToString('F2')) MB)" "SUCCESS"
+                    
+                    # Clean up temp directory
+                    Remove-Item $pkgTempDir -Recurse -Force -ErrorAction SilentlyContinue
+                    
+                    return $finalPkgPath
+                }
+            }
+            
+            Write-BuildLog ".pkg file not found in build directory" "WARNING"
+        } else {
+            Write-BuildLog "cimipkg failed with exit code $($process.ExitCode)" "ERROR"
+        }
+    }
+    catch {
+        Write-BuildLog "Failed to create .pkg package: $_" "ERROR"
+    }
+    
+    # Clean up temp directory on failure
+    Remove-Item $pkgTempDir -Recurse -Force -ErrorAction SilentlyContinue
+    
     return $null
 }
 
@@ -932,7 +1208,7 @@ function Show-BuildSummary {
     # List built files
     if (Test-Path $OutputDir) {
         Write-Host "Built Artifacts:" -ForegroundColor Green
-        Get-ChildItem -Path $OutputDir -Recurse -Include "*.exe","*.msi","*.nupkg","*.intunewin" | ForEach-Object {
+        Get-ChildItem -Path $OutputDir -Recurse -Include "*.exe","*.msi","*.nupkg","*.intunewin","*.pkg" | ForEach-Object {
             $relativePath = $_.FullName.Replace($OutputDir, '').TrimStart('\')
             $size = [math]::Round($_.Length / 1MB, 1)
             Write-Host "  - $relativePath ($size MB)" -ForegroundColor White
@@ -989,6 +1265,17 @@ try {
         Write-BuildLog "Signing disabled - binaries will be unsigned" "WARNING"
     }
     
+    # Validate conflicting flags
+    if ($SignMSI -and ($Binaries -or $Install -or $IntuneWin -or $Dev -or $PackageOnly -or $NupkgOnly -or $MsiOnly -or $PkgOnly)) {
+        Write-BuildLog "SignMSI cannot be used with other build flags" "ERROR"
+        exit 1
+    }
+    
+    if ($PkgOnly -and ($MsiOnly -or $NupkgOnly)) {
+        Write-BuildLog "PkgOnly cannot be combined with MsiOnly or NupkgOnly" "ERROR"
+        exit 1
+    }
+    
     # Handle SignMSI mode
     if ($SignMSI) {
         Write-BuildLog "SignMSI mode - signing existing MSI files..." "INFO"
@@ -1023,7 +1310,7 @@ try {
     }
     
     # Build phase
-    if (-not ($PackageOnly -or $NupkgOnly -or $MsiOnly)) {
+    if (-not ($PackageOnly -or $NupkgOnly -or $MsiOnly -or $PkgOnly)) {
         # Build solution first
         Build-Solution
         
@@ -1032,7 +1319,7 @@ try {
     }
     
     # Signing phase
-    if ($shouldSign -and -not ($PackageOnly -or $NupkgOnly -or $MsiOnly)) {
+    if ($shouldSign -and -not ($PackageOnly -or $NupkgOnly -or $MsiOnly -or $PkgOnly)) {
         Invoke-SignAllBinaries -Thumbprint $actualThumbprint -CertStore $certStore
     }
     
@@ -1060,16 +1347,32 @@ try {
     $archs = if ($Architecture -eq 'both') { @('x64', 'arm64') } elseif ($Architecture -eq 'x64') { @('x64') } else { @('arm64') }
     
     # MSI packages (unless skipped)
-    if (-not $SkipMSI -and -not $NupkgOnly) {
+    if (-not $SkipMSI -and -not $NupkgOnly -and -not $PkgOnly) {
         foreach ($arch in $archs) {
             $msiPath = Build-MsiPackage -Arch $arch -Version $version -Sign:$shouldSign -Thumbprint $actualThumbprint -CertStore $certStore
         }
     }
     
     # NuGet packages (unless skipped)
-    if (-not $MsiOnly) {
+    if (-not $MsiOnly -and -not $PkgOnly) {
         foreach ($arch in $archs) {
             $nupkgPath = Build-NuGetPackage -Arch $arch -Version $version -Sign:$shouldSign -Thumbprint $actualThumbprint
+        }
+    }
+    
+    # .pkg packages (unless skipped)
+    if (-not $MsiOnly -and -not $NupkgOnly) {
+        foreach ($arch in $archs) {
+            $pkgParams = @{
+                Arch = $arch
+                Version = $version
+                Sign = $shouldSign
+            }
+            if ($actualThumbprint) {
+                $pkgParams['Thumbprint'] = $actualThumbprint
+                $pkgParams['Store'] = $certStore
+            }
+            Build-PkgPackage @pkgParams
         }
     }
     

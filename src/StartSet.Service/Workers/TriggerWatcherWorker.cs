@@ -66,7 +66,7 @@ public class TriggerWatcherWorker : BackgroundService
 
     private async void OnTriggerFileCreated(object sender, FileSystemEventArgs e)
     {
-        StartSetLogger.Information("Trigger file detected: {File}", e.Name);
+        StartSetLogger.Information("Trigger file detected: {File}", e.Name ?? e.FullPath);
 
         // Small delay to ensure file is fully written
         await Task.Delay(100);

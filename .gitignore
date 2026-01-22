@@ -2,7 +2,8 @@
 bin/
 obj/
 release/
-build/
+build/msi/obj
+payload/
 
 # IDE
 .vs/

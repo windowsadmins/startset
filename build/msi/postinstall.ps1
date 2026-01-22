@@ -1,6 +1,7 @@
-Start-Transcript -Path "C:\ProgramData\Startset\install_log.txt" -Append
-# Define paths
-$startsetDir = "C:\ProgramData\Startset"
+Start-Transcript -Path "C:\ProgramData\ManagedScripts\logs\install_log.txt" -Append
+# Define paths - matching Paths.cs constants
+$startsetDir = "C:\ProgramData\ManagedScripts"
+$installDir = "C:\Program Files\StartSet"
 $bootEveryDir = Join-Path $startsetDir "boot-every"
 $bootOnceDir = Join-Path $startsetDir "boot-once"
 $loginWindowDir = Join-Path $startsetDir "login-window"
@@ -9,12 +10,15 @@ $loginPrivilegedOnceDir = Join-Path $startsetDir "login-privileged-once"
 $loginEveryDir = Join-Path $startsetDir "login-every"
 $loginOnceDir = Join-Path $startsetDir "login-once"
 $onDemandDir = Join-Path $startsetDir "on-demand"
+$onDemandPrivilegedDir = Join-Path $startsetDir "on-demand-privileged"
+$shareDir = Join-Path $startsetDir "share"
 $logDir = Join-Path $startsetDir "logs"
 # Create directories
 $directories = @(
     $bootEveryDir, $bootOnceDir, $loginWindowDir,
     $loginPrivilegedEveryDir, $loginPrivilegedOnceDir,
-    $loginEveryDir, $loginOnceDir, $onDemandDir, $logDir
+    $loginEveryDir, $loginOnceDir, $onDemandDir, 
+    $onDemandPrivilegedDir, $shareDir, $logDir
 )
 foreach ($dir in $directories) {
     if (-not (Test-Path -Path $dir)) {
@@ -22,18 +26,17 @@ foreach ($dir in $directories) {
         Write-Host "Created directory: $dir"
     }
 }
-# Define the path to startset.exe
-$startsetExecutable = "C:\ProgramData\Startset\startset.exe"
-# Check if startset.exe exists
-if (-not (Test-Path -Path $startsetExecutable)) {
-    Write-Error "startset.exe not found at $startsetExecutable"
+# Define the path to StartSetService.exe (not startset.exe)
+$serviceExecutable = Join-Path $installDir "StartSetService.exe"
+# Check if StartSetService.exe exists
+if (-not (Test-Path -Path $serviceExecutable)) {
+    Write-Error "StartSetService.exe not found at $serviceExecutable"
     exit 1
 }
 # Define service parameters
-$serviceName = "StartsetService"
-$serviceDisplayName = "Startset Service"
-$serviceDescription = "Runs Startset scripts at boot, login, and on-demand."
-$serviceArgs = "service"
+$serviceName = "StartSet"
+$serviceDisplayName = "StartSet Service"
+$serviceDescription = "StartSet - Script automation at boot, login, and on-demand."
 # Remove the service if it exists
 $existingService = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 if ($existingService) {
@@ -52,7 +55,7 @@ if ($existingService) {
 # Create the service
 try {
     New-Service -Name $serviceName `
-                -BinaryPathName "`"$startsetExecutable`" $serviceArgs" `
+                -BinaryPathName "`"$serviceExecutable`"" `
                 -DisplayName $serviceDisplayName `
                 -Description $serviceDescription `
                 -StartupType Automatic

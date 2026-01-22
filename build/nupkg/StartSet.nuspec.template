@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>StartSet-{{ARCHITECTURE}}</id>
+    <version>{{VERSION}}</version>
+    <title>StartSet ({{ARCHITECTURE}})</title>
+    <authors>Windows Admins Open Source</authors>
+    <owners>Windows Admins Open Source</owners>
+    <description>Windows port of macadmins/outset - Script automation at boot, login, and on-demand - {{ARCHITECTURE}} binaries</description>
+    <projectUrl>https://github.com/windowsadmins/startset</projectUrl>
+    <license type="expression">MIT</license>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>outset scripts automation boot login windows enterprise intune</tags>
+  </metadata>
+  <files>
+    <file src="..\..\release\{{ARCHITECTURE}}\*.exe" target="tools" />
+  </files>
+</package>

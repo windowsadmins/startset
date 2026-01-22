@@ -1,0 +1,25 @@
+<Project Sdk="WixToolset.Sdk/6.0.0">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
+    <UpgradeCode>7E4F8A2D-3B5C-4D6E-9F1A-2C8D4E5F6A7B</UpgradeCode>
+    <ProductName>StartSet</ProductName>
+    <ProductManufacturer>Windows Admins Open Source</ProductManufacturer>
+    <ProductVersion>$(Version)</ProductVersion>
+    <ProductLanguage>1033</ProductLanguage>
+    <InstallerPlatform>$(Platform)</InstallerPlatform>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DefineConstants>Debug</DefineConstants>
+    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <OutputPath>bin\$(Platform)\Release\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <BindPath Include="$(PublishDir)" />
+  </ItemGroup>
+</Project>

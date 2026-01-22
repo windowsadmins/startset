@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  StartSet MSI Installer - WiX v6
+  Windows port of macadmins/outset
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <!-- Define variables passed from build -->
+  <?define ProductVersion = "!(bind.FileVersion.StartSetService.exe)" ?>
+  <?define ProductName = "StartSet" ?>
+  <?define Manufacturer = "Windows Admins Open Source" ?>
+  
+  <Package Name="$(ProductName)"
+           Version="$(ProductVersion)"
+           Manufacturer="$(Manufacturer)"
+           UpgradeCode="7E4F8A2D-3B5C-4D6E-9F1A-2C8D4E5F6A7B"
+           Compressed="yes"
+           InstallerVersion="500"
+           Scope="perMachine">
+
+    <SummaryInformation Description="StartSet - Windows script automation at boot, login, and on-demand"
+                        Manufacturer="$(Manufacturer)" />
+
+    <!-- Major upgrade configuration -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  Schedule="afterInstallValidate" />
+
+    <!-- Embed CAB into MSI -->
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Custom icon for Add/Remove Programs -->
+    <Icon Id="StartSetIcon" SourceFile="$(var.PublishDir)\startset.exe" />
+    <Property Id="ARPPRODUCTICON" Value="StartSetIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/windowsadmins/startset" />
+
+    <!-- Installation directory structure -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="StartSet">
+        <!-- Main executables installed here -->
+      </Directory>
+    </StandardDirectory>
+
+    <!-- ProgramData directory for scripts -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="SCRIPTSFOLDER" Name="ManagedScripts">
+        <Directory Id="DIR_BootOnce" Name="boot-once" />
+        <Directory Id="DIR_BootEvery" Name="boot-every" />
+        <Directory Id="DIR_LoginWindow" Name="login-window" />
+        <Directory Id="DIR_LoginOnce" Name="login-once" />
+        <Directory Id="DIR_LoginEvery" Name="login-every" />
+        <Directory Id="DIR_LoginPrivilegedOnce" Name="login-privileged-once" />
+        <Directory Id="DIR_LoginPrivilegedEvery" Name="login-privileged-every" />
+        <Directory Id="DIR_OnDemand" Name="on-demand" />
+        <Directory Id="DIR_OnDemandPrivileged" Name="on-demand-privileged" />
+        <Directory Id="DIR_Share" Name="share" />
+        <Directory Id="DIR_Logs" Name="logs" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Main component group: executables -->
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="StartSetCLI" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+        <File Id="startset.exe" Source="$(var.PublishDir)\startset.exe" KeyPath="yes">
+          <Shortcut Id="StartSetShortcut"
+                    Directory="ProgramMenuFolder"
+                    Name="StartSet CLI"
+                    Description="StartSet command-line interface"
+                    Advertise="yes" />
+        </File>
+        <!-- Add to PATH -->
+        <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="no" Part="last" Action="set" System="yes" />
+      </Component>
+
+      <Component Id="StartSetService" Guid="B2C3D4E5-F678-90AB-CDEF-234567890ABC">
+        <File Id="StartSetService.exe" Source="$(var.PublishDir)\StartSetService.exe" KeyPath="yes" />
+        
+        <!-- Windows Service installation -->
+        <ServiceInstall Id="StartSetServiceInstall"
+                        Type="ownProcess"
+                        Name="StartSet"
+                        DisplayName="StartSet Service"
+                        Description="StartSet - Script automation at boot, login, and on-demand"
+                        Start="auto"
+                        Account="LocalSystem"
+                        ErrorControl="normal">
+          <!-- Service recovery options -->
+          <ServiceConfig DelayedAutoStart="no"
+                         OnInstall="yes"
+                         OnReinstall="yes" />
+        </ServiceInstall>
+        
+        <ServiceControl Id="StartSetServiceControl"
+                        Name="StartSet"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Create empty directories for scripts -->
+    <ComponentGroup Id="ScriptDirectories">
+      <Component Id="CreateBootOnce" Guid="C3D4E5F6-7890-ABCD-EF12-345678901234" Directory="DIR_BootOnce">
+        <CreateFolder />
+      </Component>
+      <Component Id="CreateBootEvery" Guid="D4E5F678-90AB-CDEF-1234-567890ABCDEF" Directory="DIR_BootEvery">
+        <CreateFolder />
+      </Component>
+      <Component Id="CreateLoginWindow" Guid="E5F67890-ABCD-EF12-3456-7890ABCDEF12" Directory="DIR_LoginWindow">
+        <CreateFolder />
+      </Component>
+      <Component Id="CreateLoginOnce" Guid="F6789012-CDEF-1234-5678-90ABCDEF1234" Directory="DIR_LoginOnce">
+        <CreateFolder />
+      </Component>
+      <Component Id="CreateLoginEvery" Guid="78901234-EF12-3456-7890-ABCDEF123456" Directory="DIR_LoginEvery">
+        <CreateFolder />
+      </Component>
+      <Component Id="CreateLoginPrivilegedOnce" Guid="89012345-1234-5678-90AB-CDEF12345678" Directory="DIR_LoginPrivilegedOnce">
+        <CreateFolder />
+      </Component>
+      <Component Id="CreateLoginPrivilegedEvery" Guid="90123456-3456-7890-ABCD-EF1234567890" Directory="DIR_LoginPrivilegedEvery">
+        <CreateFolder />
+      </Component>
+      <Component Id="CreateOnDemand" Guid="01234567-5678-90AB-CDEF-123456789012" Directory="DIR_OnDemand">
+        <CreateFolder />
+      </Component>
+      <Component Id="CreateOnDemandPrivileged" Guid="12345678-7890-ABCD-EF12-34567890ABCD" Directory="DIR_OnDemandPrivileged">
+        <CreateFolder />
+      </Component>
+      <Component Id="CreateShare" Guid="23456789-90AB-CDEF-1234-567890ABCDEF" Directory="DIR_Share">
+        <CreateFolder />
+      </Component>
+      <Component Id="CreateLogs" Guid="34567890-ABCD-EF12-3456-7890ABCDEF12" Directory="DIR_Logs">
+        <CreateFolder />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Feature definition -->
+    <Feature Id="MainFeature" Title="StartSet" Level="1" ConfigurableDirectory="INSTALLFOLDER">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="ScriptDirectories" />
+    </Feature>
+
+    <!-- Minimal UI -->
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectDir)\..\..\LICENSE.rtf" />
+
+  </Package>
+</Wix>
