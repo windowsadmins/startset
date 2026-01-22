@@ -1,4 +1,3 @@
-#Requires -Version 7.0
 <#
 .SYNOPSIS
     Pre-installation script for StartSet package.
@@ -7,8 +6,6 @@
     This script runs before StartSet files are deployed.
     It stops the StartSet service if running and prepares for installation.
 #>
-
-param()
 
 $ErrorActionPreference = 'Stop'
 
