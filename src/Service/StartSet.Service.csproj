@@ -8,9 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\StartSet.Core\StartSet.Core.csproj" />
-    <ProjectReference Include="..\StartSet.Engine\StartSet.Engine.csproj" />
-    <ProjectReference Include="..\StartSet.Infrastructure\StartSet.Infrastructure.csproj" />
+    <ProjectReference Include="..\Core\StartSet.Core.csproj" />
+    <ProjectReference Include="..\Engine\StartSet.Engine.csproj" />
+    <ProjectReference Include="..\Infrastructure\StartSet.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -67,6 +67,11 @@ public class ExecutionEngine
         StartSetLogger.Information("Starting execution for payload types: {Types}",
             string.Join(", ", payloadTypes.Select(p => p.ToString())));
 
+        if (prefs.ParallelExecution)
+        {
+            StartSetLogger.Warning("parallel_execution is enabled but not yet implemented — scripts will run sequentially");
+        }
+
         // Ensure directories exist
         EnsureDirectories();
 
@@ -175,6 +180,12 @@ public class ExecutionEngine
             else
             {
                 result = await ExecuteScriptAsync(script, timeout, cancellationToken);
+
+                // Write per-script output log if enabled
+                if (prefs.LogScriptOutput)
+                {
+                    WriteScriptOutputLog(script, result);
+                }
 
                 // Track run-once execution
                 if (payloadType.IsRunOnce() && runOnceTracker != null && result.IsSuccess)
@@ -345,6 +356,44 @@ public class ExecutionEngine
             {
                 StartSetLogger.Warning("Failed to delete trigger file {File}: {Error}", triggerFile, ex.Message);
             }
+        }
+    }
+
+    /// <summary>
+    /// Writes script stdout/stderr to a per-script log file.
+    /// </summary>
+    private static void WriteScriptOutputLog(ScriptPayload script, ExecutionResult result)
+    {
+        if (string.IsNullOrEmpty(result.StandardOutput) && string.IsNullOrEmpty(result.StandardError))
+            return;
+
+        try
+        {
+            var logFileName = $"{Path.GetFileNameWithoutExtension(script.FileName)}_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}.log";
+            var logPath = Path.Combine(Paths.LogDirectory, logFileName);
+
+            using var writer = new StreamWriter(logPath, append: false);
+            writer.WriteLine($"Script: {script.FileName}");
+            writer.WriteLine($"Status: {result.Status}");
+            writer.WriteLine($"Exit Code: {result.ExitCode}");
+            writer.WriteLine($"Start: {result.StartTime:O}");
+            writer.WriteLine();
+
+            if (!string.IsNullOrEmpty(result.StandardOutput))
+            {
+                writer.WriteLine("--- STDOUT ---");
+                writer.WriteLine(result.StandardOutput);
+            }
+
+            if (!string.IsNullOrEmpty(result.StandardError))
+            {
+                writer.WriteLine("--- STDERR ---");
+                writer.WriteLine(result.StandardError);
+            }
+        }
+        catch (Exception ex)
+        {
+            StartSetLogger.Warning("Failed to write script output log for {Script}: {Error}", script.FileName, ex.Message);
         }
     }
 

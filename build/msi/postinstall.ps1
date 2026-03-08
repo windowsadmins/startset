@@ -45,6 +45,12 @@ if (-not (Test-Path -Path $serviceExecutable)) {
     Write-Error "StartSetService.exe not found at $serviceExecutable"
     exit 1
 }
+# Register EventLog source
+if (-not [System.Diagnostics.EventLog]::SourceExists("StartSet")) {
+    New-EventLog -LogName Application -Source "StartSet"
+    Write-Host "Registered EventLog source: StartSet"
+}
+
 # Define service parameters
 $serviceName = "StartSet"
 $serviceDisplayName = "StartSet Service"

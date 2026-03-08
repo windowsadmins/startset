@@ -375,8 +375,8 @@ function Invoke-SignArtifact {
                 $psi.CreateNoWindow = $true
                 
                 $process = [System.Diagnostics.Process]::Start($psi)
-                $stdout = $process.StandardOutput.ReadToEnd()
-                $stderr = $process.StandardError.ReadToEnd()
+                $null = $process.StandardOutput.ReadToEnd()
+                $null = $process.StandardError.ReadToEnd()
                 $process.WaitForExit()
                 
                 if ($process.ExitCode -eq 0) {
@@ -548,86 +548,6 @@ function Publish-Binary {
     Write-BuildLog "$Name ($RuntimeIdentifier) built successfully" -Level 'SUCCESS'
 }
 
-function Test-CimiPkg {
-    $c = Get-Command cimipkg.exe -ErrorAction SilentlyContinue
-    if ($c) { return $true }
-    
-    # Check in common locations
-    $possiblePaths = @(
-        "$PSScriptRoot\..\CimianToolsGo\release\x64\cimipkg.exe",
-        "$PSScriptRoot\..\..\packages\CimianToolsGo\release\x64\cimipkg.exe",
-        "C:\Program Files\Cimian\cimipkg.exe"
-    )
-    
-    foreach ($path in $possiblePaths) {
-        if (Test-Path $path) {
-            return $true
-        }
-    }
-    
-    return $false
-}
-
-function Get-CimiPkgPath {
-    $c = Get-Command cimipkg.exe -ErrorAction SilentlyContinue
-    if ($c) { return $c.Source }
-    
-    # Check in common locations
-    $possiblePaths = @(
-        "$PSScriptRoot\..\CimianToolsGo\release\x64\cimipkg.exe",
-        "$PSScriptRoot\..\..\packages\CimianToolsGo\release\x64\cimipkg.exe",
-        "C:\Program Files\Cimian\cimipkg.exe"
-    )
-    
-    foreach ($path in $possiblePaths) {
-        if (Test-Path $path) {
-            return $path
-        }
-    }
-    
-    throw "cimipkg.exe not found. Build CimianToolsGo first or add cimipkg to PATH."
-}
-
-function Test-CimiPkg {
-    $c = Get-Command cimipkg.exe -ErrorAction SilentlyContinue
-    if ($c) { return $true }
-    
-    # Check in common locations
-    $possiblePaths = @(
-        "$PSScriptRoot\..\CimianToolsGo\release\x64\cimipkg.exe",
-        "$PSScriptRoot\..\..\packages\CimianToolsGo\release\x64\cimipkg.exe",
-        "C:\Program Files\Cimian\cimipkg.exe"
-    )
-    
-    foreach ($path in $possiblePaths) {
-        if (Test-Path $path) {
-            return $true
-        }
-    }
-    
-    return $false
-}
-
-function Get-CimiPkgPath {
-    $c = Get-Command cimipkg.exe -ErrorAction SilentlyContinue
-    if ($c) { return $c.Source }
-    
-    # Check in common locations
-    $possiblePaths = @(
-        "$PSScriptRoot\..\CimianToolsGo\release\x64\cimipkg.exe",
-        "$PSScriptRoot\..\..\packages\CimianToolsGo\release\x64\cimipkg.exe",
-        "C:\Program Files\Cimian\cimipkg.exe"
-    )
-    
-    foreach ($path in $possiblePaths) {
-        if (Test-Path $path) {
-            return $path
-        }
-    }
-    
-    throw "cimipkg.exe not found. Build CimianToolsGo first or add cimipkg to PATH."
-}
-
 function Build-AllBinaries {
     param([hashtable]$Version)
     
@@ -645,7 +565,7 @@ function Build-AllBinaries {
         }
         
         # Build CLI
-        $cliProject = Join-Path $SrcDir "StartSet.CLI\StartSet.CLI.csproj"
+        $cliProject = Join-Path $SrcDir "CLI\StartSet.CLI.csproj"
         Publish-Binary -Name "StartSet CLI" -ProjectPath $cliProject -RuntimeIdentifier $runtime -OutputPath $outputPath -Version $Version
         
         # Rename CLI executable
@@ -656,7 +576,7 @@ function Build-AllBinaries {
         }
         
         # Build Service
-        $serviceProject = Join-Path $SrcDir "StartSet.Service\StartSet.Service.csproj"
+        $serviceProject = Join-Path $SrcDir "Service\StartSet.Service.csproj"
         Publish-Binary -Name "StartSet Service" -ProjectPath $serviceProject -RuntimeIdentifier $runtime -OutputPath $outputPath -Version $Version
         
         # Rename Service executable
@@ -755,7 +675,7 @@ function Build-MsiPackage {
     & dotnet build $msiProjectPath `
         -p:Platform=$Arch `
         -p:ProductVersion=$msiVersion `
-        -p:BinDir=$binDir `
+        -p:PublishDir=$binDir `
         -o $OutputDir
         
     if ($LASTEXITCODE -ne 0) {
@@ -1378,7 +1298,7 @@ try {
     # IntuneWin packages (if requested)
     if ($IntuneWin) {
         foreach ($arch in $archs) {
-            $intunewinPath = Build-IntuneWinPackage -Arch $arch -Version $version
+            $null = Build-IntuneWinPackage -Arch $arch -Version $version
         }
     }
     
