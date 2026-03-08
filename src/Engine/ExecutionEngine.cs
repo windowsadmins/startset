@@ -360,7 +360,8 @@ public class ExecutionEngine
     }
 
     /// <summary>
-    /// Writes script stdout/stderr to a per-script log file.
+    /// Writes script stdout/stderr to a per-script log file in the session directory.
+    /// Falls back to the base log directory when no session is active.
     /// </summary>
     private static void WriteScriptOutputLog(ScriptPayload script, ExecutionResult result)
     {
@@ -369,8 +370,10 @@ public class ExecutionEngine
 
         try
         {
+            // Write into session directory if available, otherwise base log dir
+            var logDir = StartSetLogger.Session?.SessionDir ?? Paths.LogDirectory;
             var logFileName = $"{Path.GetFileNameWithoutExtension(script.FileName)}_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}.log";
-            var logPath = Path.Combine(Paths.LogDirectory, logFileName);
+            var logPath = Path.Combine(logDir, logFileName);
 
             using var writer = new StreamWriter(logPath, append: false);
             writer.WriteLine($"Script: {script.FileName}");
@@ -395,6 +398,19 @@ public class ExecutionEngine
         {
             StartSetLogger.Warning("Failed to write script output log for {Script}: {Error}", script.FileName, ex.Message);
         }
+
+        // Log structured event to session logger
+        var durationMs = result.StartTime != default
+            ? (long?)(DateTimeOffset.UtcNow - result.StartTime).TotalMilliseconds
+            : null;
+
+        StartSetLogger.Session?.LogScriptExecution(
+            script.FileName,
+            script.PayloadType.ToString(),
+            result.Status == ExecutionStatus.Success ? "completed" : "failed",
+            $"Exit code {result.ExitCode}",
+            durationMs,
+            result.ErrorMessage);
     }
 
     /// <summary>

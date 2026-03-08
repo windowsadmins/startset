@@ -98,24 +98,48 @@ public class LogonEventWorker : BackgroundService
                 await Task.Delay(TimeSpan.FromSeconds(delay));
             }
 
-            // Execute login scripts
-            var engine = new ExecutionEngine(_preferencesService);
-            
-            // Run user-context login scripts
-            await engine.ExecuteAsync(
-                [PayloadType.LoginOnce, PayloadType.LoginEvery],
-                username: username,
-                waitForNetwork: false);
+            using var session = new SessionLogger();
+            session.StartSession("login");
+            StartSetLogger.SetSessionLogger(session);
 
-            // Check for login-privileged trigger
-            if (File.Exists(StartSet.Core.Constants.Paths.TriggerLoginPrivileged))
+            try
             {
-                await engine.ExecuteAsync(
-                    [PayloadType.LoginPrivilegedOnce, PayloadType.LoginPrivilegedEvery],
+                // Execute login scripts
+                var engine = new ExecutionEngine(_preferencesService);
+
+                // Run user-context login scripts
+                var results = await engine.ExecuteAsync(
+                    [PayloadType.LoginOnce, PayloadType.LoginEvery],
                     username: username,
                     waitForNetwork: false);
 
-                try { File.Delete(StartSet.Core.Constants.Paths.TriggerLoginPrivileged); } catch { }
+                // Check for login-privileged trigger
+                if (File.Exists(StartSet.Core.Constants.Paths.TriggerLoginPrivileged))
+                {
+                    var privResults = await engine.ExecuteAsync(
+                        [PayloadType.LoginPrivilegedOnce, PayloadType.LoginPrivilegedEvery],
+                        username: username,
+                        waitForNetwork: false);
+
+                    results = results.Concat(privResults).ToList();
+
+                    try { File.Delete(StartSet.Core.Constants.Paths.TriggerLoginPrivileged); } catch { }
+                }
+
+                session.EndSession(
+                    results.Any(r => r.Status == ExecutionStatus.Failed) ? "completed_with_errors" : "completed",
+                    new SessionSummary
+                    {
+                        TotalScripts = results.Count,
+                        Succeeded = results.Count(r => r.Status == ExecutionStatus.Success),
+                        Failed = results.Count(r => r.Status == ExecutionStatus.Failed),
+                        Skipped = results.Count(r => r.Status == ExecutionStatus.Skipped),
+                        ScriptsHandled = results.Select(r => r.Script.FileName).ToList()
+                    });
+            }
+            finally
+            {
+                StartSetLogger.SetSessionLogger(null);
             }
         }
         catch (Exception ex)

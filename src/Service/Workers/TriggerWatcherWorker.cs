@@ -78,10 +78,25 @@ public class TriggerWatcherWorker : BackgroundService
             return;
         }
 
+        using var session = new SessionLogger();
+        session.StartSession("trigger");
+        StartSetLogger.SetSessionLogger(session);
+
         try
         {
             var engine = new ExecutionEngine(_preferencesService);
-            await engine.ExecuteAsync(payloadTypes);
+            var results = await engine.ExecuteAsync(payloadTypes);
+
+            session.EndSession(
+                results.Any(r => r.Status == ExecutionStatus.Failed) ? "completed_with_errors" : "completed",
+                new SessionSummary
+                {
+                    TotalScripts = results.Count,
+                    Succeeded = results.Count(r => r.Status == ExecutionStatus.Success),
+                    Failed = results.Count(r => r.Status == ExecutionStatus.Failed),
+                    Skipped = results.Count(r => r.Status == ExecutionStatus.Skipped),
+                    ScriptsHandled = results.Select(r => r.Script.FileName).ToList()
+                });
 
             // Delete trigger file after processing
             try
@@ -94,6 +109,11 @@ public class TriggerWatcherWorker : BackgroundService
         catch (Exception ex)
         {
             StartSetLogger.Error(ex, "Error processing trigger file: {File}", e.Name ?? "Unknown");
+            session.EndSession("failed", new SessionSummary());
+        }
+        finally
+        {
+            StartSetLogger.SetSessionLogger(null);
         }
     }
 

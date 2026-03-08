@@ -31,10 +31,10 @@ public static class Paths
     // Configuration file
     public const string PreferencesFile = @"C:\ProgramData\ManagedState\Config.yaml";
     
-    // Logs directory
+    // Logs directory (day-nested session structure: logs/YYYY-MM-DD/HHMM/)
     public const string LogDirectory = @"C:\ProgramData\ManagedState\logs";
-    public const string LogFilePath = @"C:\ProgramData\ManagedState\logs\startset.log";
-    public const int MaxLogFiles = 30;
+    public const string ReportsDirectory = @"C:\ProgramData\ManagedState\reports";
+    public const int MaxRetentionDays = 30;
     
     // Trigger files (matching outset pattern)
     public const string TriggerOnDemand = @"C:\ProgramData\ManagedState\.startset.ondemand";
@@ -57,7 +57,8 @@ public static class Paths
         OnDemandDir,
         OnDemandPrivilegedDir,
         ShareDir,
-        LogDirectory
+        LogDirectory,
+        ReportsDirectory
     ];
 
     /// <summary>

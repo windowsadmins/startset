@@ -7,11 +7,13 @@ namespace StartSet.Infrastructure.Logging;
 
 /// <summary>
 /// Centralized logging configuration for StartSet.
-/// Matches outset's logging patterns with Serilog implementation.
+/// Routes output to Serilog (console/EventLog) and SessionLogger (file-based session logs).
+/// When a SessionLogger is attached, all log messages are also written to the session's startset.log.
 /// </summary>
 public static class StartSetLogger
 {
     private static ILogger? _logger;
+    private static SessionLogger? _sessionLogger;
     private static readonly object _lock = new();
 
     /// <summary>
@@ -33,6 +35,11 @@ public static class StartSetLogger
     }
 
     /// <summary>
+    /// Gets the currently attached SessionLogger, if any.
+    /// </summary>
+    public static SessionLogger? Session => _sessionLogger;
+
+    /// <summary>
     /// Initializes the logger with preferences.
     /// </summary>
     /// <param name="preferences">Configuration preferences</param>
@@ -46,6 +53,14 @@ public static class StartSetLogger
     }
 
     /// <summary>
+    /// Attaches a SessionLogger so all log output is also written to session log files.
+    /// </summary>
+    public static void SetSessionLogger(SessionLogger? logger)
+    {
+        _sessionLogger = logger;
+    }
+
+    /// <summary>
     /// Creates the default logger configuration.
     /// </summary>
     private static ILogger CreateDefaultLogger()
@@ -55,6 +70,7 @@ public static class StartSetLogger
 
     /// <summary>
     /// Creates a logger with the specified preferences.
+    /// File logging is handled by SessionLogger — Serilog handles console and EventLog only.
     /// </summary>
     private static ILogger CreateLogger(StartSetPreferences preferences, bool isService)
     {
@@ -68,15 +84,6 @@ public static class StartSetLogger
             .MinimumLevel.Is(minimumLevel)
             .Enrich.FromLogContext()
             .Enrich.WithProperty("Application", "StartSet");
-
-        // File sink with daily rotation (30 files max, matching outset pattern)
-        config.WriteTo.File(
-            path: Paths.LogFilePath,
-            rollingInterval: RollingInterval.Day,
-            retainedFileCountLimit: Paths.MaxLogFiles,
-            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
-            shared: true,
-            flushToDiskInterval: TimeSpan.FromSeconds(1));
 
         // Console sink (for CLI interactive mode)
         if (!isService)
@@ -158,21 +165,49 @@ public static class StartSetLogger
                 disposable.Dispose();
             }
             _logger = null;
+            _sessionLogger = null;
         }
     }
 
-    // Convenience methods for static access
-    public static void Debug(string message) => Logger.Debug(message);
-    public static void Debug(string template, params object[] args) => Logger.Debug(template, args);
-    public static void Information(string message) => Logger.Information(message);
-    public static void Information(string template, params object[] args) => Logger.Information(template, args);
-    public static void Warning(string message) => Logger.Warning(message);
-    public static void Warning(string template, params object[] args) => Logger.Warning(template, args);
-    public static void Warning(Exception ex, string message) => Logger.Warning(ex, message);
-    public static void Error(string message) => Logger.Error(message);
-    public static void Error(string template, params object[] args) => Logger.Error(template, args);
-    public static void Error(Exception ex, string message) => Logger.Error(ex, message);
-    public static void Error(Exception ex, string template, params object[] args) => Logger.Error(ex, template, args);
-    public static void Fatal(string message) => Logger.Fatal(message);
-    public static void Fatal(Exception ex, string message) => Logger.Fatal(ex, message);
+    /// <summary>
+    /// Writes to the session logger if attached, mapping Serilog level names to plain strings.
+    /// </summary>
+    private static void LogToSession(string level, string message)
+    {
+        _sessionLogger?.Log(level, message);
+    }
+
+    // Convenience methods for static access — all route to both Serilog and SessionLogger
+    public static void Debug(string message) { Logger.Debug(message); LogToSession("DEBUG", message); }
+    public static void Debug(string template, params object[] args) { Logger.Debug(template, args); LogToSession("DEBUG", FormatMessage(template, args)); }
+    public static void Information(string message) { Logger.Information(message); LogToSession("INFO", message); }
+    public static void Information(string template, params object[] args) { Logger.Information(template, args); LogToSession("INFO", FormatMessage(template, args)); }
+    public static void Warning(string message) { Logger.Warning(message); LogToSession("WARN", message); }
+    public static void Warning(string template, params object[] args) { Logger.Warning(template, args); LogToSession("WARN", FormatMessage(template, args)); }
+    public static void Warning(Exception ex, string message) { Logger.Warning(ex, message); LogToSession("WARN", $"{message}: {ex.Message}"); }
+    public static void Error(string message) { Logger.Error(message); LogToSession("ERROR", message); }
+    public static void Error(string template, params object[] args) { Logger.Error(template, args); LogToSession("ERROR", FormatMessage(template, args)); }
+    public static void Error(Exception ex, string message) { Logger.Error(ex, message); LogToSession("ERROR", $"{message}: {ex.Message}"); }
+    public static void Error(Exception ex, string template, params object[] args) { Logger.Error(ex, template, args); LogToSession("ERROR", $"{FormatMessage(template, args)}: {ex.Message}"); }
+    public static void Fatal(string message) { Logger.Fatal(message); LogToSession("FATAL", message); }
+    public static void Fatal(Exception ex, string message) { Logger.Fatal(ex, message); LogToSession("FATAL", $"{message}: {ex.Message}"); }
+
+    /// <summary>
+    /// Simple message formatting for session log (replaces Serilog-style {Property} placeholders).
+    /// </summary>
+    private static string FormatMessage(string template, object[] args)
+    {
+        try
+        {
+            // Replace Serilog {Name} placeholders with {N} positional format
+            var index = 0;
+            var formatted = System.Text.RegularExpressions.Regex.Replace(
+                template, @"\{[^}]+\}", _ => $"{{{index++}}}");
+            return string.Format(formatted, args);
+        }
+        catch
+        {
+            return template;
+        }
+    }
 }
