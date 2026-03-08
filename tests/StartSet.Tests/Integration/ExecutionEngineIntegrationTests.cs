@@ -130,7 +130,7 @@ public class ExecutionEngineIntegrationTests : IDisposable
     [Fact]
     public void EnsureDirectories_CreatesAllPayloadDirectories()
     {
-        // This attempts to create directories under C:\ProgramData\ManagedScripts
+        // This attempts to create directories under C:\ProgramData\ManagedState
         // which requires elevation. Test that it doesn't throw even if dirs exist.
         var act = () => ExecutionEngine.EnsureDirectories();
         act.Should().NotThrow();

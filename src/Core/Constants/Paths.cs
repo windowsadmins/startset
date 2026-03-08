@@ -12,35 +12,35 @@ public static class Paths
     public const string ServiceExecutablePath = @"C:\Program Files\StartSet\StartSetService.exe";
 
     // Script directories (writable by administrators)
-    public const string ScriptRoot = @"C:\ProgramData\ManagedScripts";
+    public const string ScriptRoot = @"C:\ProgramData\ManagedState";
     
     // Payload directories (matching outset structure)
-    public const string BootOnceDir = @"C:\ProgramData\ManagedScripts\boot-once";
-    public const string BootEveryDir = @"C:\ProgramData\ManagedScripts\boot-every";
-    public const string LoginWindowDir = @"C:\ProgramData\ManagedScripts\login-window";
-    public const string LoginOnceDir = @"C:\ProgramData\ManagedScripts\login-once";
-    public const string LoginEveryDir = @"C:\ProgramData\ManagedScripts\login-every";
-    public const string LoginPrivilegedOnceDir = @"C:\ProgramData\ManagedScripts\login-privileged-once";
-    public const string LoginPrivilegedEveryDir = @"C:\ProgramData\ManagedScripts\login-privileged-every";
-    public const string OnDemandDir = @"C:\ProgramData\ManagedScripts\on-demand";
-    public const string OnDemandPrivilegedDir = @"C:\ProgramData\ManagedScripts\on-demand-privileged";
+    public const string BootOnceDir = @"C:\ProgramData\ManagedState\boot-once";
+    public const string BootEveryDir = @"C:\ProgramData\ManagedState\boot-every";
+    public const string LoginWindowDir = @"C:\ProgramData\ManagedState\login-window";
+    public const string LoginOnceDir = @"C:\ProgramData\ManagedState\login-once";
+    public const string LoginEveryDir = @"C:\ProgramData\ManagedState\login-every";
+    public const string LoginPrivilegedOnceDir = @"C:\ProgramData\ManagedState\login-privileged-once";
+    public const string LoginPrivilegedEveryDir = @"C:\ProgramData\ManagedState\login-privileged-every";
+    public const string OnDemandDir = @"C:\ProgramData\ManagedState\on-demand";
+    public const string OnDemandPrivilegedDir = @"C:\ProgramData\ManagedState\on-demand-privileged";
     
     // Shared data directory
-    public const string ShareDir = @"C:\ProgramData\ManagedScripts\share";
+    public const string ShareDir = @"C:\ProgramData\ManagedState\share";
     
     // Configuration file
-    public const string PreferencesFile = @"C:\ProgramData\ManagedScripts\Config.yaml";
+    public const string PreferencesFile = @"C:\ProgramData\ManagedState\Config.yaml";
     
     // Logs directory
-    public const string LogDirectory = @"C:\ProgramData\ManagedScripts\logs";
-    public const string LogFilePath = @"C:\ProgramData\ManagedScripts\logs\startset.log";
+    public const string LogDirectory = @"C:\ProgramData\ManagedState\logs";
+    public const string LogFilePath = @"C:\ProgramData\ManagedState\logs\startset.log";
     public const int MaxLogFiles = 30;
     
     // Trigger files (matching outset pattern)
-    public const string TriggerOnDemand = @"C:\ProgramData\ManagedScripts\.startset.ondemand";
-    public const string TriggerOnDemandPrivileged = @"C:\ProgramData\ManagedScripts\.startset.ondemand-privileged";
-    public const string TriggerLoginPrivileged = @"C:\ProgramData\ManagedScripts\.startset.login-privileged";
-    public const string TriggerCleanup = @"C:\ProgramData\ManagedScripts\.startset.cleanup";
+    public const string TriggerOnDemand = @"C:\ProgramData\ManagedState\.startset.ondemand";
+    public const string TriggerOnDemandPrivileged = @"C:\ProgramData\ManagedState\.startset.ondemand-privileged";
+    public const string TriggerLoginPrivileged = @"C:\ProgramData\ManagedState\.startset.login-privileged";
+    public const string TriggerCleanup = @"C:\ProgramData\ManagedState\.startset.cleanup";
 
     /// <summary>
     /// Gets all payload directories that should be created at startup.
@@ -75,5 +75,5 @@ public static class Paths
     /// <summary>
     /// Gets the checksum file path for validated scripts.
     /// </summary>
-    public const string ChecksumFile = @"C:\ProgramData\ManagedScripts\share\checksums.yaml";
+    public const string ChecksumFile = @"C:\ProgramData\ManagedState\share\checksums.yaml";
 }

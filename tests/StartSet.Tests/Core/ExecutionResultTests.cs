@@ -8,7 +8,7 @@ public class ExecutionResultTests
 {
     private static ScriptPayload CreateTestScript(string name = "test.ps1") => new()
     {
-        FilePath = $@"C:\ProgramData\ManagedScripts\boot-every\{name}",
+        FilePath = $@"C:\ProgramData\ManagedState\boot-every\{name}",
         PayloadType = PayloadType.BootEvery
     };
 

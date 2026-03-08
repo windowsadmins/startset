@@ -1,6 +1,6 @@
-Start-Transcript -Path "C:\ProgramData\ManagedScripts\logs\install_log.txt" -Append
+Start-Transcript -Path "C:\ProgramData\ManagedState\logs\install_log.txt" -Append
 # Define paths - matching Paths.cs constants
-$startsetDir = "C:\ProgramData\ManagedScripts"
+$startsetDir = "C:\ProgramData\ManagedState"
 $installDir = "C:\Program Files\StartSet"
 
 # Add install directory to system PATH if not already present
