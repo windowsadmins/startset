@@ -10,7 +10,7 @@
 $ErrorActionPreference = 'Stop'
 
 try {
-    $logDir = "C:\ProgramData\StartSet\logs"
+    $logDir = "C:\ProgramData\ManagedScripts\logs"
     if (-not (Test-Path $logDir)) {
         New-Item -Path $logDir -ItemType Directory -Force | Out-Null
     }

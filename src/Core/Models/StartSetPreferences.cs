@@ -87,12 +87,6 @@ public class StartSetPreferences
     public bool ParallelExecution { get; set; } = false;
 
     /// <summary>
-    /// Override directories for payload types (advanced use).
-    /// </summary>
-    [YamlMember(Alias = "custom_directories")]
-    public Dictionary<string, string>? CustomDirectories { get; set; }
-
-    /// <summary>
     /// Delay in seconds before running login scripts (allows desktop to settle).
     /// Default: 0
     /// </summary>

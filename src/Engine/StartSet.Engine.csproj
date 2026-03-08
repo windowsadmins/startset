@@ -7,8 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\StartSet.Core\StartSet.Core.csproj" />
-    <ProjectReference Include="..\StartSet.Infrastructure\StartSet.Infrastructure.csproj" />
+    <ProjectReference Include="..\Core\StartSet.Core.csproj" />
+    <ProjectReference Include="..\Infrastructure\StartSet.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

@@ -10,7 +10,7 @@
 $ErrorActionPreference = 'Stop'
 
 try {
-    Start-Transcript -Path "C:\ProgramData\StartSet\logs\postinstall_{{VERSION}}.log" -Append
+    Start-Transcript -Path "C:\ProgramData\ManagedScripts\logs\postinstall_{{VERSION}}.log" -Append
 
     Write-Host "=========================================="
     Write-Host "StartSet {{VERSION}} Post-Installation"

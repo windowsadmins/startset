@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\StartSet.Core\StartSet.Core.csproj" />
+    <ProjectReference Include="..\Core\StartSet.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
