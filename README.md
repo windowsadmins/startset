@@ -26,7 +26,7 @@ StartSet provides a robust framework for running scripts at various points durin
 ## Directory Structure
 
 ```
-C:\ProgramData\ManagedScripts\
+C:\ProgramData\ManagedState\
 ├── boot-once\              # Scripts run once at boot (deleted after)
 ├── boot-every\             # Scripts run every boot
 ├── login-window\           # Scripts run at login window (before auth)
@@ -109,7 +109,7 @@ startset --version
 
 ## Configuration
 
-Create `C:\ProgramData\ManagedScripts\Config.yaml`:
+Create `C:\ProgramData\ManagedState\Config.yaml`:
 
 ```yaml
 # Wait for network before running boot scripts

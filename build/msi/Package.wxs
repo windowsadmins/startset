@@ -43,7 +43,7 @@
 
     <!-- ProgramData directory for scripts -->
     <StandardDirectory Id="CommonAppDataFolder">
-      <Directory Id="SCRIPTSFOLDER" Name="ManagedScripts">
+      <Directory Id="SCRIPTSFOLDER" Name="ManagedState">
         <Directory Id="DIR_BootOnce" Name="boot-once" />
         <Directory Id="DIR_BootEvery" Name="boot-every" />
         <Directory Id="DIR_LoginWindow" Name="login-window" />

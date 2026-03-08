@@ -11,7 +11,7 @@ public class ScriptPayloadTests
     {
         var payload = new ScriptPayload
         {
-            FilePath = @"C:\ProgramData\ManagedScripts\boot-every\deploy.ps1",
+            FilePath = @"C:\ProgramData\ManagedState\boot-every\deploy.ps1",
             PayloadType = PayloadType.BootEvery
         };
 

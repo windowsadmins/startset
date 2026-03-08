@@ -19,7 +19,7 @@ public class RunOnceTrackerTests : IDisposable
 
     private static ScriptPayload CreateScript(string name = "test.ps1") => new()
     {
-        FilePath = $@"C:\ProgramData\ManagedScripts\boot-once\{name}",
+        FilePath = $@"C:\ProgramData\ManagedState\boot-once\{name}",
         PayloadType = PayloadType.BootOnce,
         Checksum = "abc123"
     };

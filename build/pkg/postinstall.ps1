@@ -10,7 +10,7 @@
 $ErrorActionPreference = 'Stop'
 
 try {
-    Start-Transcript -Path "C:\ProgramData\ManagedScripts\logs\postinstall_{{VERSION}}.log" -Append
+    Start-Transcript -Path "C:\ProgramData\ManagedState\logs\postinstall_{{VERSION}}.log" -Append
 
     Write-Host "=========================================="
     Write-Host "StartSet {{VERSION}} Post-Installation"
@@ -18,7 +18,7 @@ try {
     Write-Host ""
 
     # Define paths - matching StartSet.Core.Constants.Paths
-    $startsetDataDir = "C:\ProgramData\ManagedScripts"
+    $startsetDataDir = "C:\ProgramData\ManagedState"
     $installDir = "C:\Program Files\StartSet"
 
     # Add install directory to system PATH if not already present
