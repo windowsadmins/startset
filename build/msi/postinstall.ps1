@@ -38,7 +38,7 @@ foreach ($dir in $directories) {
         Write-Host "Created directory: $dir"
     }
 }
-# Define the path to StartSetService.exe (not startset.exe)
+# Define the path to StartSetService.exe (not managedstatekeeper.exe)
 $serviceExecutable = Join-Path $installDir "StartSetService.exe"
 # Check if StartSetService.exe exists
 if (-not (Test-Path -Path $serviceExecutable)) {

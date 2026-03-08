@@ -30,7 +30,7 @@
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <!-- Custom icon for Add/Remove Programs -->
-    <Icon Id="StartSetIcon" SourceFile="$(var.PublishDir)\startset.exe" />
+    <Icon Id="StartSetIcon" SourceFile="$(var.PublishDir)\managedstatekeeper.exe" />
     <Property Id="ARPPRODUCTICON" Value="StartSetIcon" />
     <Property Id="ARPHELPLINK" Value="https://github.com/windowsadmins/startset" />
 
@@ -61,7 +61,7 @@
     <!-- Main component group: executables -->
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="StartSetCLI" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
-        <File Id="startset.exe" Source="$(var.PublishDir)\startset.exe" KeyPath="yes">
+        <File Id="managedstatekeeper.exe" Source="$(var.PublishDir)\managedstatekeeper.exe" KeyPath="yes">
           <Shortcut Id="StartSetShortcut"
                     Directory="ProgramMenuFolder"
                     Name="StartSet CLI"

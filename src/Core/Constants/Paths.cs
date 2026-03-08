@@ -8,7 +8,7 @@ public static class Paths
 {
     // Installation directory (binary location)
     public const string InstallDirectory = @"C:\Program Files\StartSet";
-    public const string ExecutablePath = @"C:\Program Files\StartSet\startset.exe";
+    public const string ExecutablePath = @"C:\Program Files\StartSet\managedstatekeeper.exe";
     public const string ServiceExecutablePath = @"C:\Program Files\StartSet\StartSetService.exe";
 
     // Script directories (writable by administrators)
