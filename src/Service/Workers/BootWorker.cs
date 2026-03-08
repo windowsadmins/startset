@@ -22,6 +22,10 @@ public class BootWorker : BackgroundService
     {
         StartSetLogger.Information("BootWorker starting - executing boot scripts");
 
+        using var session = new SessionLogger();
+        session.StartSession("boot");
+        StartSetLogger.SetSessionLogger(session);
+
         try
         {
             // Small delay to allow service to fully start
@@ -55,14 +59,32 @@ public class BootWorker : BackgroundService
             {
                 StartSetLogger.Information("Login-window scripts complete: {Count} processed", loginWindowResults.Count);
             }
+
+            var allResults = results.Concat(loginWindowResults).ToList();
+            session.EndSession(
+                allResults.Any(r => r.Status == ExecutionStatus.Failed) ? "completed_with_errors" : "completed",
+                new SessionSummary
+                {
+                    TotalScripts = allResults.Count,
+                    Succeeded = allResults.Count(r => r.Status == ExecutionStatus.Success),
+                    Failed = allResults.Count(r => r.Status == ExecutionStatus.Failed),
+                    Skipped = allResults.Count(r => r.Status == ExecutionStatus.Skipped),
+                    ScriptsHandled = allResults.Select(r => r.Script.FileName).ToList()
+                });
         }
         catch (OperationCanceledException)
         {
             StartSetLogger.Warning("Boot script execution cancelled");
+            session.EndSession("cancelled", new SessionSummary());
         }
         catch (Exception ex)
         {
             StartSetLogger.Error(ex, "Boot script execution failed");
+            session.EndSession("failed", new SessionSummary());
+        }
+        finally
+        {
+            StartSetLogger.SetSessionLogger(null);
         }
 
         // BootWorker completes after initial execution - doesn't need to run continuously

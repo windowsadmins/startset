@@ -14,8 +14,8 @@ public class PathsTests
     [Fact]
     public void AllPayloadDirectories_ContainsExpectedCount()
     {
-        // 9 payload dirs + share + logs = 11
-        Paths.AllPayloadDirectories.Should().HaveCount(11);
+        // 9 payload dirs + share + logs + reports = 12
+        Paths.AllPayloadDirectories.Should().HaveCount(12);
     }
 
     [Fact]
@@ -87,8 +87,14 @@ public class PathsTests
     }
 
     [Fact]
-    public void LogFilePath_IsUnderLogDirectory()
+    public void ReportsDirectory_IsUnderScriptRoot()
     {
-        Paths.LogFilePath.Should().StartWith(Paths.LogDirectory);
+        Paths.ReportsDirectory.Should().StartWith(Paths.ScriptRoot);
+    }
+
+    [Fact]
+    public void MaxRetentionDays_IsPositive()
+    {
+        Paths.MaxRetentionDays.Should().BeGreaterThan(0);
     }
 }

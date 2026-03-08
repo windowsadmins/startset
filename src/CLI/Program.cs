@@ -35,18 +35,33 @@ public class Program
         preferencesService.Load();
         StartSetLogger.Initialize(preferencesService.Preferences, isService: false);
 
+        // Start a logging session (day-nested timestamped directory)
+        using var sessionLogger = new SessionLogger();
+        var runType = args.Length > 0 ? args[0] : "cli";
+        sessionLogger.StartSession(runType);
+        StartSetLogger.SetSessionLogger(sessionLogger);
+
         try
         {
             // Build root command
             var rootCommand = BuildRootCommand(preferencesService);
 
             // Execute command
-            return await rootCommand.InvokeAsync(args);
+            var exitCode = await rootCommand.InvokeAsync(args);
+
+            // End session with summary
+            sessionLogger.EndSession(
+                exitCode == 0 ? "completed" : "failed",
+                new SessionSummary());
+
+            return exitCode;
         }
         catch (Exception ex)
         {
             StartSetLogger.Fatal(ex, "Unhandled exception in StartSet CLI");
             Console.Error.WriteLine($"Fatal error: {ex.Message}");
+
+            sessionLogger.EndSession("failed", new SessionSummary());
             return 1;
         }
         finally
