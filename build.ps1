@@ -570,7 +570,7 @@ function Build-AllBinaries {
         
         # Rename CLI executable
         $cliExe = Join-Path $outputPath "StartSet.CLI.exe"
-        $targetCliExe = Join-Path $outputPath "startset.exe"
+        $targetCliExe = Join-Path $outputPath "managedstatekeeper.exe"
         if (Test-Path $cliExe) {
             Move-Item $cliExe $targetCliExe -Force
         }
@@ -826,7 +826,7 @@ function Build-PkgPackage {
     
     Write-BuildLog "Copying StartSet binaries for $Arch architecture to .pkg payload..." "INFO"
     $binaries = @(
-        "startset.exe",
+        "managedstatekeeper.exe",
         "StartSetService.exe"
     )
     
@@ -961,7 +961,7 @@ function Build-IntuneWinPackage {
     if (-not (Test-Path $msiFile)) {
         # Try to create from executables directly
         $archDir = Join-Path $OutputDir $Arch
-        $startsetExe = Join-Path $archDir "startset.exe"
+        $startsetExe = Join-Path $archDir "managedstatekeeper.exe"
         
         if (-not (Test-Path $startsetExe)) {
             Write-BuildLog "Neither MSI nor executables found for $Arch - cannot create IntuneWin package" "WARNING"

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>StartSet.CLI</RootNamespace>
-    <AssemblyName>startset</AssemblyName>
+    <AssemblyName>managedstatekeeper</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 

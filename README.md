@@ -42,7 +42,7 @@ C:\ProgramData\ManagedState\
     └── startset.log
 
 C:\Program Files\StartSet\
-├── startset.exe            # CLI tool
+├── managedstatekeeper.exe  # CLI / execution engine
 └── StartSetService.exe     # Windows Service
 ```
 
@@ -50,7 +50,7 @@ C:\Program Files\StartSet\
 
 ### Manual Installation
 
-1. Copy `startset.exe` and `StartSetService.exe` to `C:\Program Files\StartSet\`
+1. Copy `managedstatekeeper.exe` and `StartSetService.exe` to `C:\Program Files\StartSet\`
 2. Register the Windows Service:
    ```powershell
    sc.exe create StartSet binPath="C:\Program Files\StartSet\StartSetService.exe" start=auto
@@ -66,45 +66,45 @@ Deploy the MSI or .intunewin package through your MDM solution.
 
 ```powershell
 # Run boot scripts
-startset boot
+managedstatekeeper boot
 
 # Run login scripts for current user
-startset login
+managedstatekeeper login
 
 # Run on-demand scripts
-startset on-demand
+managedstatekeeper on-demand
 
 # Run privileged on-demand scripts
-startset on-demand --privileged
+managedstatekeeper on-demand --privileged
 
 # List all scripts
-startset list
+managedstatekeeper list
 
 # List scripts with execution status
-startset list --show-executed
+managedstatekeeper list --show-executed
 
 # Add a script to boot-every
-startset add myscript.ps1 --type boot-every
+managedstatekeeper add myscript.ps1 --type boot-every
 
 # Remove a script
-startset remove myscript.ps1 --type boot-every
+managedstatekeeper remove myscript.ps1 --type boot-every
 
 # Manage ignored users (matching outset)
-startset add-ignored-user bob jane
-startset remove-ignored-user bob
-startset list-ignored-users
+managedstatekeeper add-ignored-user bob jane
+managedstatekeeper remove-ignored-user bob
+managedstatekeeper list-ignored-users
 
 # Manage script overrides (force re-run of run-once scripts)
-startset add-override myscript.ps1
-startset remove-override myscript.ps1 --clear-runonce
-startset list-overrides
+managedstatekeeper add-override myscript.ps1
+managedstatekeeper remove-override myscript.ps1 --clear-runonce
+managedstatekeeper list-overrides
 
 # Compute checksums (matching outset)
-startset checksum myscript.ps1
-startset checksum all --record
+managedstatekeeper checksum myscript.ps1
+managedstatekeeper checksum all --record
 
 # Show version
-startset --version
+managedstatekeeper --version
 ```
 
 ## Configuration
