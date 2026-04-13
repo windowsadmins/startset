@@ -113,15 +113,22 @@ public class LogonEventWorker : BackgroundService
                     username: username,
                     waitForNetwork: false);
 
-                // Check for login-privileged trigger
+                // Always run login-privileged-every scripts (elevated, every login)
+                var privEveryResults = await engine.ExecuteAsync(
+                    [PayloadType.LoginPrivilegedEvery],
+                    username: username,
+                    waitForNetwork: false);
+                results = results.Concat(privEveryResults).ToList();
+
+                // Check for login-privileged trigger (gates once scripts only)
                 if (File.Exists(StartSet.Core.Constants.Paths.TriggerLoginPrivileged))
                 {
-                    var privResults = await engine.ExecuteAsync(
-                        [PayloadType.LoginPrivilegedOnce, PayloadType.LoginPrivilegedEvery],
+                    var privOnceResults = await engine.ExecuteAsync(
+                        [PayloadType.LoginPrivilegedOnce],
                         username: username,
                         waitForNetwork: false);
 
-                    results = results.Concat(privResults).ToList();
+                    results = results.Concat(privOnceResults).ToList();
 
                     try { File.Delete(StartSet.Core.Constants.Paths.TriggerLoginPrivileged); } catch { }
                 }
