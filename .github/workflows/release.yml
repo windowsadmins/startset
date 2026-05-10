@@ -10,6 +10,7 @@ permissions:
 env:
   DOTNET_VERSION: '10.0.x'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  TZ: 'America/Vancouver'
 
 jobs:
   release:
@@ -57,30 +58,42 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          $version = "${{ steps.version.outputs.version }}"
+          $tag = '${{ github.ref_name }}'
+          $title = "StartSet $tag"
           $dotnet = (dotnet --version).Trim()
           $os = (Get-CimInstance Win32_OperatingSystem).Caption.Trim()
           $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          $title = "StartSet $version"
 
           $buildInfo = @"
           ## Build info
 
-          Built with .NET SDK $dotnet on $os, via GitHub Actions: $runUrl. Provided **unsigned**.
+          This release was built with .NET SDK $dotnet on $os, via a GitHub Actions workflow here: $runUrl. It is provided **unsigned** — see signing instructions at the bottom.
           "@
 
           $signing = @"
           ## Signing for enterprise deployment
 
+          Sign the binaries and MSIs with your organization's code signing certificate before distribution:
+
           ``````powershell
-          signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /n "Your Certificate Name" StartSet.exe
+          `$cert = "Your Certificate Name"
+          `$timestampUrl = "http://timestamp.digicert.com"
+
+          # Sign all binaries (run after extracting any zipped payload)
+          Get-ChildItem -Recurse -Include *.exe,*.dll | ForEach-Object {
+              signtool sign /fd SHA256 /tr `$timestampUrl /td SHA256 /n `$cert `$_.FullName
+          }
+
+          # Sign the MSI installers (run separately, after binaries are signed and repackaged)
+          Get-ChildItem -Filter "StartSet-*.msi" | ForEach-Object {
+              signtool sign /fd SHA256 /tr `$timestampUrl /td SHA256 /n `$cert `$_.FullName
+          }
           ``````
 
           Built from commit ``$env:GITHUB_SHA``.
           "@
 
-          $autoNotes = gh api -X POST "repos/$env:GITHUB_REPOSITORY/releases/generate-notes" -f tag_name=$tag --jq .body
+          $autoNotes = (gh api -X POST "repos/$env:GITHUB_REPOSITORY/releases/generate-notes" -f tag_name=$tag --jq .body) -join "`n"
           $notes = "$buildInfo`n`n$autoNotes`n`n$signing"
 
           $artifacts = Get-ChildItem -Path release-out -File | ForEach-Object { $_.FullName }
