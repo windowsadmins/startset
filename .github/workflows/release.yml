@@ -39,9 +39,9 @@ jobs:
           $version = $tag -replace '^v',''
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      - name: Build + package (unsigned)
+      - name: Build binaries (unsigned)
         shell: pwsh
-        run: .\build.ps1 -NoSign
+        run: .\build.ps1 -NoSign -Binaries
 
       - name: Collect release artifacts
         shell: pwsh
