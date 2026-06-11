@@ -1,0 +1,9 @@
+product:
+  name: StartSet
+  version: ${TIMESTAMP}
+  developer: Windows Admins Open Source
+  identifier: com.github.windowsadmins.startset
+  description: Automatically process packages and scripts during boot, login, or on demand on Windows.
+signing_certificate: EmilyCarrU Intune Windows Enterprise Certificate
+postinstall_action: none
+install_location: 'C:\Program Files\StartSet'

@@ -53,6 +53,15 @@ jobs:
           }
           Get-ChildItem release-out | Format-Table Name, Length
 
+      - name: Prepare release zips
+        shell: pwsh
+        run: |
+          foreach ($arch in @("x64", "arm64")) {
+            $binDir = "release/$arch"
+            if (-not (Test-Path "$binDir/StartSetService.exe")) { throw "Binaries not found in $binDir" }
+            Compress-Archive -Path "$binDir/*.exe" -DestinationPath "release-out/startset-$arch.zip" -Force
+          }
+
       - name: Create GitHub Release
         shell: pwsh
         env:
