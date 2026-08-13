@@ -2,6 +2,7 @@ using System.Diagnostics;
 using StartSet.Core.Enums;
 using StartSet.Core.Models;
 using StartSet.Engine.Interfaces;
+using StartSet.Engine.Native;
 using StartSet.Infrastructure.Logging;
 
 namespace StartSet.Engine.Processors;
@@ -36,16 +37,67 @@ public class PowerShellProcessor : IScriptProcessor
 
             // Find PowerShell executable (prefer pwsh if available)
             var psPath = FindPowerShell();
+            var scriptArguments = BuildArguments(script.FilePath);
+            var scriptWorkingDirectory = Path.GetDirectoryName(script.FilePath) ?? Environment.CurrentDirectory;
+
+            // login-* and on-demand payloads are documented as user context. The
+            // service runs as LocalSystem, so without this they execute as SYSTEM
+            // in session 0: HKCU writes land in SYSTEM's hive, user32 calls never
+            // reach the desktop, and scripts that skip administrators match SYSTEM
+            // and exit 0 while appearing to succeed.
+            if (RequiresUserContext(script.PayloadType))
+            {
+                var asUser = UserSessionLauncher.Run(psPath, scriptArguments, scriptWorkingDirectory, timeout);
+
+                if (asUser.Launched)
+                {
+                    result.EndTime = DateTimeOffset.UtcNow;
+                    result.StandardOutput = asUser.StandardOutput;
+                    result.StandardError = asUser.StandardError;
+
+                    if (asUser.TimedOut)
+                    {
+                        result.Status = ExecutionStatus.Timeout;
+                        result.ErrorMessage = $"Script execution timed out after {timeout.TotalSeconds:F0} seconds";
+                        StartSetLogger.Warning("PowerShell script timed out in user session: {Script}", script.FileName);
+                    }
+                    else
+                    {
+                        result.ExitCode = asUser.ExitCode;
+                        result.Status = asUser.ExitCode == 0 ? ExecutionStatus.Success : ExecutionStatus.Failed;
+                        if (result.Status == ExecutionStatus.Failed)
+                        {
+                            result.ErrorMessage = $"Exit code: {asUser.ExitCode}";
+                            StartSetLogger.Warning("PowerShell script failed in user session with exit code {ExitCode}: {Script}",
+                                asUser.ExitCode, script.FileName);
+                        }
+                        else
+                        {
+                            StartSetLogger.Information("PowerShell script completed successfully in user session: {Script}", script.FileName);
+                        }
+                    }
+
+                    return result;
+                }
+
+                // Fall through to SYSTEM execution rather than dropping the script.
+                // Logged loudly because a user-context payload running as SYSTEM is
+                // the failure this code exists to prevent -- silence here would
+                // recreate the original bug invisibly.
+                StartSetLogger.Warning(
+                    "Could not run {Script} as the console user ({Reason}); falling back to SYSTEM context. Per-user settings in this script will not apply.",
+                    script.FileName, asUser.FailureReason ?? "unknown");
+            }
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = psPath,
-                Arguments = BuildArguments(script.FilePath),
+                Arguments = scriptArguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(script.FilePath) ?? Environment.CurrentDirectory
+                WorkingDirectory = scriptWorkingDirectory
             };
 
             using var process = new Process { StartInfo = startInfo };
@@ -109,6 +161,19 @@ public class PowerShellProcessor : IScriptProcessor
 
         return result;
     }
+
+    /// <summary>
+    /// Payload types whose scripts are documented to run as the signed-in user.
+    /// The *-privileged and boot-* types deliberately stay in the service's own
+    /// SYSTEM context.
+    /// </summary>
+    private static bool RequiresUserContext(PayloadType type) => type switch
+    {
+        PayloadType.LoginOnce => true,
+        PayloadType.LoginEvery => true,
+        PayloadType.OnDemand => true,
+        _ => false
+    };
 
     private static string FindPowerShell()
     {
