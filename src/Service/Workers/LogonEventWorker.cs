@@ -1,4 +1,5 @@
 using System.Diagnostics.Eventing.Reader;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Hosting;
 using StartSet.Core.Enums;
 using StartSet.Engine;
@@ -49,12 +50,21 @@ public class LogonEventWorker : BackgroundService
     {
         try
         {
-            // Query for interactive logon events (LogonType 2 or 10 for interactive/RDP)
-            // Event 4624 with LogonType 2 (Interactive) or 10 (RemoteInteractive/RDP)
+            // Query for interactive logon events.
+            //   2  Interactive         - console logon, uncached credentials
+            //   10 RemoteInteractive   - RDP
+            //   11 CachedInteractive   - console logon against cached credentials
+            //
+            // 11 is the common case on domain-joined and Entra-joined machines: the
+            // FIRST logon for a user is type 2, and every logon after that is type 11
+            // once their credentials are cached. Watching only 2 and 10 meant login
+            // payloads ran once per user per machine and then silently never again,
+            // which is invisible in the logs because system pseudo-sessions keep
+            // producing type 2 events (see IsSystemAccount below).
             var query = new EventLogQuery(
                 "Security",
                 PathType.LogName,
-                $"*[System[EventID={EventIdLogon}]] and *[EventData[Data[@Name='LogonType']='2' or Data[@Name='LogonType']='10']]");
+                $"*[System[EventID={EventIdLogon}]] and *[EventData[Data[@Name='LogonType']='2' or Data[@Name='LogonType']='10' or Data[@Name='LogonType']='11']]");
 
             _watcher = new EventLogWatcher(query);
             _watcher.EventRecordWritten += OnLogonEvent;
@@ -176,6 +186,14 @@ public class LogonEventWorker : BackgroundService
         }
     }
 
+    // Desktop Window Manager and User Mode Font Driver accounts are named
+    // DWM-<n> / UMFD-<n>, where <n> is the session id and grows without bound on
+    // a machine that accumulates sessions. A fixed list up to 3 let DWM-4 and
+    // above through on shared machines, which ran a full login cycle for a
+    // pseudo-session and wrote per-user state for an account that is not a user.
+    private static readonly Regex SessionPseudoAccount =
+        new(@"^(DWM|UMFD)-\d+$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static bool IsSystemAccount(string? username)
     {
         if (string.IsNullOrEmpty(username)) return true;
@@ -183,11 +201,11 @@ public class LogonEventWorker : BackgroundService
         var systemAccounts = new[]
         {
             "SYSTEM", "LOCAL SERVICE", "NETWORK SERVICE",
-            "ANONYMOUS LOGON", "DWM-1", "DWM-2", "DWM-3",
-            "UMFD-0", "UMFD-1", "UMFD-2", "UMFD-3"
+            "ANONYMOUS LOGON"
         };
 
         return systemAccounts.Contains(username.ToUpperInvariant()) ||
+               SessionPseudoAccount.IsMatch(username) ||
                username.EndsWith("$"); // Computer accounts end with $
     }
 
