@@ -176,8 +176,8 @@ function Import-DotEnv {
 Import-DotEnv
 
 # Enterprise certificate configuration - loaded from environment or .env file
-$Global:EnterpriseCertCN = $env:STARTSET_CERT_CN ?? $env:CIMIAN_CERT_CN ?? 'EmilyCarrU Intune Windows Enterprise Certificate'
-$Global:EnterpriseCertSubject = $env:STARTSET_CERT_SUBJECT ?? $env:CIMIAN_CERT_SUBJECT ?? 'EmilyCarrU'
+$Global:EnterpriseCertCN = $env:STARTSET_CERT_CN ?? $env:CIMIAN_CERT_CN ?? "$(if ($env:SIGNING_CERT_CN) { $env:SIGNING_CERT_CN } else { 'unset-signing-cert-cn' })"
+$Global:EnterpriseCertSubject = $env:STARTSET_CERT_SUBJECT ?? $env:CIMIAN_CERT_SUBJECT ?? 'unset-signing-cert-subject'
 
 # Script constants
 $script:RootDir = $PSScriptRoot
