@@ -288,21 +288,47 @@ public class SessionLogger : IDisposable
                 }
             }
 
-            // Clean up legacy flat log files (startset*.log from old Serilog rotation)
-            foreach (var file in Directory.GetFiles(Paths.LogDirectory, "startset*.log"))
-            {
-                try
-                {
-                    var fileInfo = new FileInfo(file);
-                    if (fileInfo.LastWriteTime < cutoff)
-                        fileInfo.Delete();
-                }
-                catch { /* ignore */ }
-            }
+            SweepExpiredFiles(Paths.LogDirectory, cutoff);
         }
         catch
         {
             // Silent failure - retention cleanup is non-critical
+        }
+    }
+
+    /// <summary>
+    /// Deletes files sitting directly in <paramref name="directory"/> that were last
+    /// written before <paramref name="cutoff"/>.
+    /// </summary>
+    /// <remarks>
+    /// This used to glob "startset*.log", which covered the legacy Serilog rotation and
+    /// nothing else. The log directory is shared: payload scripts write their own files
+    /// here under their own names, and none of them were ever expired - the oldest on a
+    /// long-running machine predate the retention window by months. Anything loose in
+    /// the directory is a log, so age is the only test that needs applying.
+    ///
+    /// Deliberately not recursive. Session directories are aged as a unit by their own
+    /// date-named rule above; picking old files out of one individually would leave half
+    /// a session's log set behind.
+    /// </remarks>
+    public static void SweepExpiredFiles(string directory, DateTime cutoff)
+    {
+        if (!Directory.Exists(directory))
+            return;
+
+        foreach (var file in Directory.GetFiles(directory))
+        {
+            try
+            {
+                var info = new FileInfo(file);
+                if (info.LastWriteTime < cutoff)
+                    info.Delete();
+            }
+            catch
+            {
+                // A file still held open by its writer throws here. Skip it and try
+                // again next session rather than aborting the sweep.
+            }
         }
     }
 
