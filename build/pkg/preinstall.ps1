@@ -7,16 +7,14 @@
     It stops the StartSet service if running and prepares for installation.
 #>
 
+# Output goes to stdout only. The packaging tool captures it and the client folds it
+# into the managed-install session log, which is the record that gets collected.
+# This used to Start-Transcript into a file under the StartSet data directory, which
+# diverted the output away from that capture: the file sat where nothing reads it and
+# the session log recorded nothing at all.
 $ErrorActionPreference = 'Stop'
 
 try {
-    $logDir = "C:\ProgramData\ManagedState\logs"
-    if (-not (Test-Path $logDir)) {
-        New-Item -Path $logDir -ItemType Directory -Force | Out-Null
-    }
-    
-    Start-Transcript -Path "$logDir\preinstall_{{VERSION}}.log" -Append
-
     Write-Host "=========================================="
     Write-Host "StartSet {{VERSION}} Pre-Installation"
     Write-Host "=========================================="
@@ -51,15 +49,12 @@ try {
     Write-Host "Pre-installation checks complete"
     Write-Host ""
 
-    Stop-Transcript
     exit 0
 }
 catch {
     Write-Host ""
     Write-Host "ERROR: $_" -ForegroundColor Red
     Write-Host $_.ScriptStackTrace -ForegroundColor Red
-    
-    try { Stop-Transcript } catch {}
     
     exit 1
 }
