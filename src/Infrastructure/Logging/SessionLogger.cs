@@ -289,6 +289,9 @@ public class SessionLogger : IDisposable
             }
 
             SweepExpiredFiles(Paths.LogDirectory, cutoff);
+
+            // Verbose installer logs live in their own directory and are aged the same way.
+            SweepExpiredFiles(Paths.InstallLogDirectory, cutoff);
         }
         catch
         {

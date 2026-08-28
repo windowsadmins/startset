@@ -86,4 +86,25 @@ public class SessionLogRetentionTests : IDisposable
 
         Assert.False(Directory.Exists(missing));
     }
+
+    [Fact]
+    public void ExpiresVerboseInstallerLogs()
+    {
+        // Installer logs are namespaced away from the log root, so they need the sweep
+        // pointed at them explicitly rather than inheriting it.
+        var old = WriteFile("installs/Package_20250101_120000.log", Expired);
+        var recent = WriteFile("installs/Package_20260801_120000.log", Fresh);
+
+        SessionLogger.SweepExpiredFiles(Path.Combine(_root, "installs"), Cutoff);
+
+        Assert.False(File.Exists(old));
+        Assert.True(File.Exists(recent));
+    }
+
+    [Fact]
+    public void SweepingAMissingDirectoryIsNotAnError()
+    {
+        // A machine that has never installed a package payload has no installs directory.
+        SessionLogger.SweepExpiredFiles(Path.Combine(_root, "does-not-exist"), Cutoff);
+    }
 }

@@ -48,8 +48,13 @@ public class PackageProcessor : IScriptProcessor
             StartSetLogger.Information("Installing MSI package: {Script}", script.FileName);
 
             // Construct msiexec command with logging
+            // Verbose MSI logs are large and long-lived, so they get their own directory
+            // rather than sitting loose in the log root.
+            var installLogDir = StartSet.Core.Constants.Paths.InstallLogDirectory;
+            Directory.CreateDirectory(installLogDir);
+
             var logFile = Path.Combine(
-                StartSet.Core.Constants.Paths.LogDirectory,
+                installLogDir,
                 $"{Path.GetFileNameWithoutExtension(script.FileName)}_{DateTime.Now:yyyyMMdd_HHmmss}.log");
 
             var arguments = $"/i \"{script.FilePath}\" /qn /norestart /l*v \"{logFile}\"";
