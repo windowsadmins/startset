@@ -17,6 +17,9 @@ namespace StartSet.Engine;
 /// </summary>
 public class ExecutionEngine
 {
+    /// <summary>Per-stream ceiling on payload output folded into the session log.</summary>
+    private const int MaxOutputLinesPerStream = 500;
+
     private readonly PreferencesService _preferencesService;
     private readonly ChecksumService _checksumService;
     private readonly PermissionValidator _permissionValidator;
@@ -184,7 +187,7 @@ public class ExecutionEngine
                 // Write per-script output log if enabled
                 if (prefs.LogScriptOutput)
                 {
-                    WriteScriptOutputLog(script, result);
+                    EmitScriptOutput(script, result);
                 }
 
                 // Track run-once execution
@@ -360,44 +363,27 @@ public class ExecutionEngine
     }
 
     /// <summary>
-    /// Writes script stdout/stderr to a per-script log file in the session directory.
-    /// Falls back to the base log directory when no session is active.
+    /// Emits script stdout/stderr into the session log, then records the structured
+    /// execution event.
     /// </summary>
-    private static void WriteScriptOutputLog(ScriptPayload script, ExecutionResult result)
+    /// <remarks>
+    /// This used to write one sidecar file per script beside the session log. A payload
+    /// runs as a child of this process, so its output is already in hand and never needed
+    /// a file to carry it. Writing one split the record in two -- the session log said a
+    /// script ran, a separate file said what it printed -- and when no session was
+    /// attached the sidecar fell back to the log root, where nothing downstream reads it
+    /// and only age could ever remove it. Output belongs in the session log, which is the
+    /// record that gets collected.
+    /// </remarks>
+    private static void EmitScriptOutput(ScriptPayload script, ExecutionResult result)
     {
-        if (string.IsNullOrEmpty(result.StandardOutput) && string.IsNullOrEmpty(result.StandardError))
-            return;
+        var name = Path.GetFileNameWithoutExtension(script.FileName);
 
-        try
-        {
-            // Write into session directory if available, otherwise base log dir
-            var logDir = StartSetLogger.Session?.SessionDir ?? Paths.LogDirectory;
-            var logFileName = $"{Path.GetFileNameWithoutExtension(script.FileName)}_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}.log";
-            var logPath = Path.Combine(logDir, logFileName);
+        foreach (var line in FormatOutputLines(name, "stdout", result.StandardOutput))
+            StartSetLogger.Information("{Line}", line);
 
-            using var writer = new StreamWriter(logPath, append: false);
-            writer.WriteLine($"Script: {script.FileName}");
-            writer.WriteLine($"Status: {result.Status}");
-            writer.WriteLine($"Exit Code: {result.ExitCode}");
-            writer.WriteLine($"Start: {result.StartTime:O}");
-            writer.WriteLine();
-
-            if (!string.IsNullOrEmpty(result.StandardOutput))
-            {
-                writer.WriteLine("--- STDOUT ---");
-                writer.WriteLine(result.StandardOutput);
-            }
-
-            if (!string.IsNullOrEmpty(result.StandardError))
-            {
-                writer.WriteLine("--- STDERR ---");
-                writer.WriteLine(result.StandardError);
-            }
-        }
-        catch (Exception ex)
-        {
-            StartSetLogger.Warning("Failed to write script output log for {Script}: {Error}", script.FileName, ex.Message);
-        }
+        foreach (var line in FormatOutputLines(name, "stderr", result.StandardError))
+            StartSetLogger.Information("{Line}", line);
 
         // Log structured event to session logger
         var durationMs = result.StartTime != default
@@ -411,6 +397,39 @@ public class ExecutionEngine
             $"Exit code {result.ExitCode}",
             durationMs,
             result.ErrorMessage);
+    }
+
+    /// <summary>
+    /// Splits one captured stream into the lines to record, capped so a runaway script
+    /// cannot bury the rest of the session.
+    /// </summary>
+    /// <remarks>
+    /// Pure so the splitting and the cap can be tested without a log sink.
+    /// </remarks>
+    internal static IReadOnlyList<string> FormatOutputLines(string scriptName, string stream, string? content)
+    {
+        var formatted = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(content))
+            return formatted;
+
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            if (formatted.Count == MaxOutputLinesPerStream)
+            {
+                formatted.Add($"[{scriptName}] {stream} | ... output truncated after {MaxOutputLinesPerStream} lines");
+                break;
+            }
+
+            formatted.Add($"[{scriptName}] {stream} | {line.TrimEnd()}");
+        }
+
+        return formatted;
     }
 
     /// <summary>

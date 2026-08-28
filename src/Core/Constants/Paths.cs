@@ -34,6 +34,10 @@ public static class Paths
     // Logs directory (day-nested session structure: logs/YYYY-MM-DD/HHMM/)
     public const string LogDirectory = @"C:\ProgramData\ManagedState\logs";
     public const string ReportsDirectory = @"C:\ProgramData\ManagedState\reports";
+
+    // Verbose installer logs from package payloads. Namespaced so the log root holds
+    // only the dated session tree -- these are far too large to fold into a session log.
+    public const string InstallLogDirectory = @"C:\ProgramData\ManagedState\logs\installs";
     public const int MaxRetentionDays = 30;
     
     // Trigger files (matching outset pattern)

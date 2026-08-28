@@ -7,11 +7,14 @@
     It creates necessary directories and installs the StartSet Windows service.
 #>
 
+# Output goes to stdout only. The packaging tool captures it and the client folds it
+# into the managed-install session log, which is the record that gets collected.
+# This used to Start-Transcript into a file under the StartSet data directory, which
+# diverted the output away from that capture: the file sat where nothing reads it and
+# the session log recorded nothing at all.
 $ErrorActionPreference = 'Stop'
 
 try {
-    Start-Transcript -Path "C:\ProgramData\ManagedState\logs\postinstall_{{VERSION}}.log" -Append
-
     Write-Host "=========================================="
     Write-Host "StartSet {{VERSION}} Post-Installation"
     Write-Host "=========================================="
@@ -113,15 +116,12 @@ try {
     Write-Host "=========================================="
     Write-Host ""
 
-    Stop-Transcript
     exit 0
 }
 catch {
     Write-Host ""
     Write-Host "ERROR: $_" -ForegroundColor Red
     Write-Host $_.ScriptStackTrace -ForegroundColor Red
-    
-    try { Stop-Transcript } catch {}
     
     exit 1
 }
