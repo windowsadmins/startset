@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using StartSet.Core.Constants;
+using StartSet.Core.Enums;
+using StartSet.Core.Models;
 
 namespace StartSet.Infrastructure.Logging;
 
@@ -17,6 +19,7 @@ namespace StartSet.Infrastructure.Logging;
 /// Reports: reports/
 ///   - sessions.json   (aggregated session summaries)
 ///   - events.json     (aggregated events from recent sessions)
+///   - items.json      (one record per payload with its outcome this run)
 ///   - run.log         (latest session log copy)
 /// </summary>
 public class SessionLogger : IDisposable
@@ -45,6 +48,7 @@ public class SessionLogger : IDisposable
     private StreamWriter? _eventsFile;      // events.jsonl
 
     private readonly ConcurrentQueue<SessionEvent> _events = new();
+    private readonly List<ItemRecord> _items = new();
     private SessionData _sessionData = new();
     private bool _disposed;
 
@@ -220,6 +224,22 @@ public class SessionLogger : IDisposable
             Error = error,
             Level = status == "failed" ? "ERROR" : (status == "completed" ? "INFO" : "DEBUG")
         });
+    }
+
+    /// <summary>
+    /// Records the outcome of one payload for reports/items.json. Called once per
+    /// payload the engine considered this session, skipped ones included. A payload
+    /// seen twice in one session keeps its latest outcome.
+    /// </summary>
+    public void RecordPayloadOutcome(ScriptPayload script, ExecutionResult result)
+    {
+        var record = BuildItemRecord(script, result, _sessionId, DateTime.UtcNow);
+
+        lock (_logLock)
+        {
+            _items.RemoveAll(i => i.Id == record.Id);
+            _items.Add(record);
+        }
     }
 
     /// <summary>
@@ -404,11 +424,199 @@ public class SessionLogger : IDisposable
         {
             GenerateSessionsReport();
             GenerateEventsReport();
+            GenerateItemsReport();
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[ERROR] Failed to generate reports: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Writes reports/items.json: one record per payload this session considered, in
+    /// the same shape Cimian writes for its managed items so one reader serves both.
+    /// A session that considered no payloads leaves the previous file in place.
+    /// </summary>
+    private void GenerateItemsReport()
+    {
+        List<ItemRecord> items;
+        lock (_logLock)
+        {
+            if (_items.Count == 0)
+                return;
+            items = _items.ToList();
+        }
+
+        var historyCutoff = DateTime.Now.AddDays(-ItemHistoryDays);
+        var failures = CountRecentFailures(EnumerateAllSessionDirs().Take(ItemHistoryMaxSessions), historyCutoff);
+
+        foreach (var item in items)
+        {
+            // The event stream is the durable count; the current run is folded in so a
+            // failure still registers when script output logging is turned off.
+            var failedThisRun = item.CurrentStatus == "Error" ? 1 : 0;
+            item.FailureCount = Math.Max(failures.GetValueOrDefault(item.ItemName), failedThisRun);
+        }
+
+        WriteItemsReport(Paths.ReportsDirectory, items);
+    }
+
+    private const int ItemHistoryDays = 7;
+    private const int ItemHistoryMaxSessions = 50;
+    private const int MaxRecordedMessageLength = 500;
+
+    /// <summary>
+    /// Serialises <paramref name="items"/> to items.json inside <paramref name="reportsDir"/>.
+    /// </summary>
+    public static void WriteItemsReport(string reportsDir, IReadOnlyList<ItemRecord> items)
+    {
+        Directory.CreateDirectory(reportsDir);
+        var itemsPath = Path.Combine(reportsDir, "items.json");
+        File.WriteAllText(itemsPath, JsonSerializer.Serialize(items, JsonOptions));
+    }
+
+    /// <summary>
+    /// Builds the items.json record for one payload outcome.
+    /// </summary>
+    /// <remarks>
+    /// Pure so the mapping can be tested without a session on disk. Field semantics
+    /// follow Cimian's items.json: <c>last_seen_in_session</c> is stamped only when this
+    /// run acted on the payload, so a consumer can filter to what the run actually did;
+    /// a skipped payload carries an empty session id and no <c>action_performed</c>.
+    /// </remarks>
+    public static ItemRecord BuildItemRecord(ScriptPayload script, ExecutionResult result, string sessionId, DateTime nowUtc)
+    {
+        var acted = result.Status != ExecutionStatus.Skipped;
+        var sessionStatus = result.Status switch
+        {
+            ExecutionStatus.Success => "completed",
+            // A run-once payload that already ran is done, not waiting.
+            ExecutionStatus.Skipped when script.AlreadyExecuted => "installed",
+            ExecutionStatus.Skipped => "skipped",
+            _ => "failed"
+        };
+        var status = NormalizeItemStatus(sessionStatus);
+        var payloadPath = script.PayloadType.GetDirectoryPath();
+        var payloadDir = payloadPath[(payloadPath.LastIndexOfAny(['\\', '/']) + 1)..];
+
+        var record = new ItemRecord
+        {
+            Id = $"{payloadDir}/{script.FileName}".ToLowerInvariant().Replace(" ", ""),
+            ItemName = script.FileName,
+            DisplayName = Path.GetFileNameWithoutExtension(script.FileName),
+            ItemType = script.Extension.TrimStart('.'),
+            CurrentStatus = status,
+            LatestVersion = "",
+            InstalledVersion = null,
+            LastSeenInSession = acted ? sessionId : "",
+            LastAttemptTime = result.StartTime.UtcDateTime.ToString("o"),
+            LastAttemptStatus = status,
+            LastUpdate = nowUtc.ToString("o"),
+            FailureCount = status == "Error" ? 1 : 0,
+            Type = "startset",
+            ActionPerformed = acted ? (script.IsPackage ? "install" : "execute") : null
+        };
+
+        if (status == "Error")
+        {
+            record.LastError = Truncate(
+                FirstNonBlankLine(result.ErrorMessage)
+                ?? FirstNonBlankLine(result.StandardError)
+                ?? $"Exit code {result.ExitCode?.ToString() ?? "unknown"}");
+        }
+
+        // A payload that succeeded but wrote to stderr is the nearest thing a script
+        // has to a warning, and the only one the session records.
+        if (result.Status == ExecutionStatus.Success && FirstNonBlankLine(result.StandardError) is { } warning)
+        {
+            record.LastWarning = Truncate(warning);
+            record.WarningCount = 1;
+        }
+
+        return record;
+    }
+
+    /// <summary>
+    /// Counts failed script_execution events per payload name across the given session
+    /// directories, ignoring events older than <paramref name="cutoff"/>. Mirrors the
+    /// failure history Cimian folds into its items.json.
+    /// </summary>
+    public static Dictionary<string, int> CountRecentFailures(IEnumerable<string> sessionDirs, DateTime cutoff)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var dir in sessionDirs)
+        {
+            var eventsPath = Path.Combine(dir, "events.jsonl");
+            if (!File.Exists(eventsPath))
+                continue;
+
+            try
+            {
+                foreach (var line in File.ReadLines(eventsPath))
+                {
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    SessionEvent? evt;
+                    try { evt = JsonSerializer.Deserialize<SessionEvent>(line, JsonLinesOptions); }
+                    catch { continue; }
+
+                    if (evt == null || evt.Timestamp < cutoff || evt.EventType != "script_execution")
+                        continue;
+                    if (string.IsNullOrEmpty(evt.ScriptName) || evt.Status != "failed")
+                        continue;
+
+                    counts[evt.ScriptName] = counts.GetValueOrDefault(evt.ScriptName) + 1;
+                }
+            }
+            catch
+            {
+                // A session still being written, or one we cannot read, contributes nothing.
+            }
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// Maps session outcomes onto the item status vocabulary Cimian's items.json uses.
+    /// </summary>
+    private static string NormalizeItemStatus(string status)
+    {
+        return status.ToLowerInvariant() switch
+        {
+            "completed" or "success" or "installed" or "ok" => "Installed",
+            "failed" or "error" or "fail" => "Error",
+            "warning" or "warn" => "Warning",
+            "pending" or "pending install" or "pending update" or "skipped" or "not installed" => "Pending",
+            "removed" or "uninstalled" => "Removed",
+            "not available" => "Not Available",
+            _ => status switch
+            {
+                "Installed" or "Error" or "Warning" or "Pending" or "Removed" or "Not Available" => status,
+                _ => "Pending"
+            }
+        };
+    }
+
+    private static string? FirstNonBlankLine(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+
+        foreach (var line in text.Replace("\r\n", "\n").Split('\n'))
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+                return line.Trim();
+        }
+
+        return null;
+    }
+
+    private static string Truncate(string text)
+    {
+        return text.Length <= MaxRecordedMessageLength ? text : text[..MaxRecordedMessageLength];
     }
 
     private void GenerateSessionsReport()
@@ -597,4 +805,67 @@ public class SessionEvent
     [JsonPropertyName("error")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Error { get; set; }
+}
+
+/// <summary>
+/// One payload's outcome, written to reports/items.json. Field names match the record
+/// Cimian writes for its managed items so a single reader serves both tools; the
+/// <c>type</c> field is what tells them apart.
+/// </summary>
+public class ItemRecord
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    [JsonPropertyName("item_name")]
+    public string ItemName { get; set; } = "";
+
+    [JsonPropertyName("display_name")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DisplayName { get; set; }
+
+    [JsonPropertyName("item_type")]
+    public string ItemType { get; set; } = "";
+
+    [JsonPropertyName("current_status")]
+    public string CurrentStatus { get; set; } = "";
+
+    [JsonPropertyName("latest_version")]
+    public string LatestVersion { get; set; } = "";
+
+    [JsonPropertyName("installed_version")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? InstalledVersion { get; set; }
+
+    [JsonPropertyName("last_seen_in_session")]
+    public string LastSeenInSession { get; set; } = "";
+
+    [JsonPropertyName("last_attempt_time")]
+    public string LastAttemptTime { get; set; } = "";
+
+    [JsonPropertyName("last_attempt_status")]
+    public string LastAttemptStatus { get; set; } = "";
+
+    [JsonPropertyName("last_update")]
+    public string LastUpdate { get; set; } = "";
+
+    [JsonPropertyName("failure_count")]
+    public int FailureCount { get; set; }
+
+    [JsonPropertyName("warning_count")]
+    public int WarningCount { get; set; }
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "startset";
+
+    [JsonPropertyName("last_error")]
+    public string LastError { get; set; } = "";
+
+    [JsonPropertyName("last_warning")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LastWarning { get; set; }
+
+    [JsonPropertyName("action_performed")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActionPerformed { get; set; }
 }

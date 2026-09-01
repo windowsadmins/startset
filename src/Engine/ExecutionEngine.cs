@@ -159,6 +159,7 @@ public class ExecutionEngine
 
                 if (runOnceTracker.HasExecuted(script.FilePath, script.Checksum))
                 {
+                    script.AlreadyExecuted = true;
                     script.ShouldSkip = true;
                     script.SkipReason = "Already executed (run-once)";
                 }
@@ -212,6 +213,7 @@ public class ExecutionEngine
             }
 
             results.Add(result);
+            StartSetLogger.Session?.RecordPayloadOutcome(script, result);
         }
 
         return results;
