@@ -82,18 +82,20 @@ public class ExecutionEngineIntegrationTests : IDisposable
 
         var results = await engine.ExecuteAsync([PayloadType.BootEvery], waitForNetwork: false);
 
-        // Discovery is the claim under test, so assert the script was found -- if
-        // the root were ignored there would be no result at all.
+        // Discovery is the claim under test: if the supplied root were ignored
+        // there would be no result at all, because the script exists nowhere else.
         //
-        // It is Skipped rather than Success on purpose: boot-every requires
-        // elevation, so the permission validator checks that the payload sits in a
-        // directory only administrators can write, and a temp directory correctly
-        // fails that. Asserting Success here would mean weakening a security
-        // control to suit a test.
+        // Deliberately no assertion on Status. boot-every requires elevation, so
+        // the permission validator checks the payload sits somewhere only
+        // administrators can write -- and whether a temp directory satisfies that
+        // depends on who is running the suite. It is Skipped on a developer
+        // machine and Success on a build agent, where the runner is an
+        // administrator. Asserting either one would make this test pass or fail on
+        // a property of the machine rather than of the code, which is the exact
+        // habit this file was just fixed to break.
         results.Should().ContainSingle();
         results[0].Script.FileName.Should().Be("Marker.ps1");
-        results[0].Status.Should().Be(ExecutionStatus.Skipped);
-        results[0].ErrorMessage.Should().Contain("Permission validation failed");
+        results[0].Script.FilePath.Should().StartWith(_temp.Path);
     }
 
     // ──────────────── Ignored Users ────────────────
