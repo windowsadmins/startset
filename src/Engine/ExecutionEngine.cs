@@ -103,9 +103,22 @@ public class ExecutionEngine
         var succeeded = results.Count(r => r.Status == ExecutionStatus.Success);
         var failed = results.Count(r => r.Status == ExecutionStatus.Failed);
         var skipped = results.Count(r => r.Status == ExecutionStatus.Skipped);
+        var deferred = results.Count(r => r.Status == ExecutionStatus.Deferred);
 
-        StartSetLogger.Information("Execution complete: {Succeeded} succeeded, {Failed} failed, {Skipped} skipped",
-            succeeded, failed, skipped);
+        StartSetLogger.Information(
+            "Execution complete: {Succeeded} succeeded, {Failed} failed, {Skipped} skipped, {Deferred} deferred",
+            succeeded, failed, skipped, deferred);
+
+        // Say it twice, and plainly. A deferral means user-visible work did not
+        // happen, and it is the line someone reading a log after a complaint
+        // needs to find.
+        if (deferred > 0)
+        {
+            StartSetLogger.Warning(
+                "{Deferred} payload(s) did not run because the console user's session could not be reached. " +
+                "Their settings have NOT been applied.",
+                deferred);
+        }
 
         return results;
     }
@@ -395,7 +408,13 @@ public class ExecutionEngine
         StartSetLogger.Session?.LogScriptExecution(
             script.FileName,
             script.PayloadType.ToString(),
-            result.Status == ExecutionStatus.Success ? "completed" : "failed",
+            result.Status switch
+            {
+                ExecutionStatus.Success => "completed",
+                ExecutionStatus.Deferred => "deferred",
+                ExecutionStatus.Skipped => "skipped",
+                _ => "failed"
+            },
             $"Exit code {result.ExitCode}",
             durationMs,
             result.ErrorMessage);

@@ -33,6 +33,17 @@ public class ExecutableProcessor : IScriptProcessor
         {
             StartSetLogger.Information("Executing executable: {Script}", script.FileName);
 
+            var workingDirectory = Path.GetDirectoryName(script.FilePath) ?? Environment.CurrentDirectory;
+
+            // Same rule as .ps1: a login-* or on-demand payload runs as the
+            // signed-in user or it does not run. This gate was missing here
+            // entirely, so batch and executable payloads in the login directories
+            // ran as SYSTEM in session 0 with nothing reporting it.
+            var userContext = UserContextExecution.TryRunAsConsoleUser(
+                script, script.FilePath, string.Empty, workingDirectory, timeout, result.StartTime);
+            if (userContext is not null)
+                return userContext;
+
             var startInfo = new ProcessStartInfo
             {
                 FileName = script.FilePath,
@@ -40,7 +51,7 @@ public class ExecutableProcessor : IScriptProcessor
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(script.FilePath) ?? Environment.CurrentDirectory
+                WorkingDirectory = workingDirectory
             };
 
             using var process = new Process { StartInfo = startInfo };

@@ -99,6 +99,18 @@ public class ExecutionResult
     };
 
     /// <summary>
+    /// Creates a deferred result: the payload needed the signed-in user's
+    /// session and could not be started there, so nothing ran.
+    /// </summary>
+    public static ExecutionResult Deferred(ScriptPayload script, string reason) => new()
+    {
+        Script = script,
+        Status = ExecutionStatus.Deferred,
+        ErrorMessage = reason,
+        StartTime = DateTimeOffset.UtcNow
+    };
+
+    /// <summary>
     /// Creates a timeout result.
     /// </summary>
     public static ExecutionResult Timeout(ScriptPayload script, TimeSpan elapsed) => new()
