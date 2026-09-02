@@ -486,13 +486,20 @@ public class SessionLogger : IDisposable
     /// </remarks>
     public static ItemRecord BuildItemRecord(ScriptPayload script, ExecutionResult result, string sessionId, DateTime nowUtc)
     {
-        var acted = result.Status != ExecutionStatus.Skipped;
+        // Neither a skipped nor a deferred payload performed an action.
+        var acted = result.Status is not (ExecutionStatus.Skipped or ExecutionStatus.Deferred);
         var sessionStatus = result.Status switch
         {
             ExecutionStatus.Success => "completed",
             // A run-once payload that already ran is done, not waiting.
             ExecutionStatus.Skipped when script.AlreadyExecuted => "installed",
             ExecutionStatus.Skipped => "skipped",
+            // Deferred is Pending, not Error. The payload did not run and its
+            // settings are not applied -- so it must not report Installed -- but
+            // it is a transient condition that the next sign-in retries, and
+            // filing it as Error would raise a fleet-wide alarm for something
+            // that heals itself. Pending says exactly what is true: outstanding.
+            ExecutionStatus.Deferred => "pending",
             _ => "failed"
         };
         var status = NormalizeItemStatus(sessionStatus);

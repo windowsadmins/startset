@@ -25,10 +25,24 @@ public class ExecutionEngine
     private readonly PermissionValidator _permissionValidator;
     private readonly NetworkMonitor _networkMonitor;
     private readonly List<IScriptProcessor> _processors;
+    private readonly string? _payloadRoot;
 
-    public ExecutionEngine(PreferencesService preferencesService)
+    /// <param name="payloadRoot">
+    /// Overrides the root the payload directories are read from. Null -- the
+    /// default, and what the service and CLI use -- means the installed location
+    /// under ProgramData.
+    ///
+    /// This exists so tests can point the engine at a directory they control.
+    /// Without it any test that exercises discovery reads the live payload
+    /// directories of whatever machine it runs on, and "assert nothing ran" holds
+    /// only on a machine with nothing installed. On a managed machine, or a
+    /// workstation with StartSet on it, such a test executes real login payloads
+    /// for effect before failing its assertion.
+    /// </param>
+    public ExecutionEngine(PreferencesService preferencesService, string? payloadRoot = null)
     {
         _preferencesService = preferencesService;
+        _payloadRoot = payloadRoot;
         _checksumService = new ChecksumService();
         _permissionValidator = new PermissionValidator();
         _networkMonitor = new NetworkMonitor(_preferencesService.Preferences.NetworkTimeout);
@@ -103,11 +117,39 @@ public class ExecutionEngine
         var succeeded = results.Count(r => r.Status == ExecutionStatus.Success);
         var failed = results.Count(r => r.Status == ExecutionStatus.Failed);
         var skipped = results.Count(r => r.Status == ExecutionStatus.Skipped);
+        var deferred = results.Count(r => r.Status == ExecutionStatus.Deferred);
 
-        StartSetLogger.Information("Execution complete: {Succeeded} succeeded, {Failed} failed, {Skipped} skipped",
-            succeeded, failed, skipped);
+        StartSetLogger.Information(
+            "Execution complete: {Succeeded} succeeded, {Failed} failed, {Skipped} skipped, {Deferred} deferred",
+            succeeded, failed, skipped, deferred);
+
+        // Say it twice, and plainly. A deferral means user-visible work did not
+        // happen, and it is the line someone reading a log after a complaint
+        // needs to find.
+        if (deferred > 0)
+        {
+            StartSetLogger.Warning(
+                "{Deferred} payload(s) did not run because the console user's session could not be reached. " +
+                "Their settings have NOT been applied.",
+                deferred);
+        }
 
         return results;
+    }
+
+    /// <summary>
+    /// The directory a payload type is read from, honouring a test-supplied root.
+    /// </summary>
+    private string ResolvePayloadDirectory(PayloadType payloadType)
+    {
+        var installed = payloadType.GetDirectoryPath();
+        if (_payloadRoot is null)
+            return installed;
+
+        // Keep the leaf ("login-every", "boot-once", ...) so a test root has the
+        // same shape as the real one and payload-type routing is exercised too.
+        var leaf = Path.GetFileName(installed);
+        return Path.Combine(_payloadRoot, leaf);
     }
 
     /// <summary>
@@ -120,7 +162,7 @@ public class ExecutionEngine
     {
         var results = new List<ExecutionResult>();
         var prefs = _preferencesService.Preferences;
-        var directory = payloadType.GetDirectoryPath();
+        var directory = ResolvePayloadDirectory(payloadType);
 
         StartSetLogger.Debug("Processing payload type: {Type} in {Directory}", payloadType, directory);
 
@@ -395,7 +437,13 @@ public class ExecutionEngine
         StartSetLogger.Session?.LogScriptExecution(
             script.FileName,
             script.PayloadType.ToString(),
-            result.Status == ExecutionStatus.Success ? "completed" : "failed",
+            result.Status switch
+            {
+                ExecutionStatus.Success => "completed",
+                ExecutionStatus.Deferred => "deferred",
+                ExecutionStatus.Skipped => "skipped",
+                _ => "failed"
+            },
             $"Exit code {result.ExitCode}",
             durationMs,
             result.ErrorMessage);
