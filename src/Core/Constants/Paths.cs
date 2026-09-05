@@ -43,6 +43,7 @@ public static class Paths
     // Trigger files (matching outset pattern)
     public const string TriggerOnDemand = @"C:\ProgramData\ManagedState\.startset.ondemand";
     public const string TriggerOnDemandPrivileged = @"C:\ProgramData\ManagedState\.startset.ondemand-privileged";
+    public const string TriggerLogin = @"C:\ProgramData\ManagedState\.startset.login";
     public const string TriggerLoginPrivileged = @"C:\ProgramData\ManagedState\.startset.login-privileged";
     public const string TriggerCleanup = @"C:\ProgramData\ManagedState\.startset.cleanup";
 

@@ -161,7 +161,8 @@ Create these files to trigger script execution:
 
 - `.startset.ondemand` - Triggers on-demand scripts
 - `.startset.ondemand-privileged` - Triggers privileged on-demand scripts
-- `.startset.login-privileged` - Triggers login-privileged scripts at next login
+- `.startset.login` - Runs the login scripts now, in the signed-in user's session
+- `.startset.login-privileged` - Runs the login-privileged scripts now, as SYSTEM
 - `.startset.cleanup` - Triggers cleanup of trigger files
 
 ## Building from Source

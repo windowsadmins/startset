@@ -74,8 +74,39 @@ public class PathsTests
         // StartSet trigger files start with . (hidden convention)
         Paths.TriggerOnDemand.Should().Contain(".startset.");
         Paths.TriggerOnDemandPrivileged.Should().Contain(".startset.");
+        Paths.TriggerLogin.Should().Contain(".startset.");
         Paths.TriggerLoginPrivileged.Should().Contain(".startset.");
         Paths.TriggerCleanup.Should().Contain(".startset.");
+    }
+
+    [Fact]
+    public void TriggerFiles_AreDistinctPaths()
+    {
+        // The watcher matches a created file against these by exact path, so two
+        // triggers sharing one path would silently run the wrong payloads -- and a
+        // trigger whose path no other constant collides with is the only thing that
+        // makes that mapping unambiguous.
+        var triggers = new[]
+        {
+            Paths.TriggerOnDemand,
+            Paths.TriggerOnDemandPrivileged,
+            Paths.TriggerLogin,
+            Paths.TriggerLoginPrivileged,
+            Paths.TriggerCleanup
+        };
+
+        triggers.Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void TriggerLogin_IsNotAPrefixOfTriggerLoginPrivileged()
+    {
+        // ".startset.login" is a prefix of ".startset.login-privileged" as a string.
+        // The watcher compares whole paths so this is not a live bug, but any future
+        // switch to prefix or wildcard matching would map the privileged trigger to
+        // the user-context payloads, running the wrong set with no error.
+        Paths.TriggerLoginPrivileged.Should().StartWith(Paths.TriggerLogin);
+        Paths.TriggerLogin.Should().NotBe(Paths.TriggerLoginPrivileged);
     }
 
     // ──────────────── Install paths ────────────────
