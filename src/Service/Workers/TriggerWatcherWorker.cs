@@ -123,6 +123,7 @@ public class TriggerWatcherWorker : BackgroundService
         {
             (Paths.TriggerOnDemand, new[] { PayloadType.OnDemand }),
             (Paths.TriggerOnDemandPrivileged, new[] { PayloadType.OnDemandPrivileged }),
+            (Paths.TriggerLogin, new[] { PayloadType.LoginOnce, PayloadType.LoginEvery }),
             (Paths.TriggerLoginPrivileged, new[] { PayloadType.LoginPrivilegedOnce, PayloadType.LoginPrivilegedEvery }),
             (Paths.TriggerCleanup, Array.Empty<PayloadType>())
         };
@@ -151,10 +152,30 @@ public class TriggerWatcherWorker : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Maps a trigger file to the payloads it runs.
+    ///
+    /// .startset.login is the user-context counterpart of .startset.login-privileged:
+    /// it re-runs the login payloads in the signed-in user's session without waiting
+    /// for a logon. That matters because a package whose payload is login-every has
+    /// no other way to take effect on a machine that is already signed in -- the
+    /// files are installed, and nothing runs them until someone logs out and back
+    /// in. On a shared lab machine that can be days.
+    ///
+    /// Safe by construction rather than by care: LoginOnce and LoginEvery are
+    /// IsUserContext, so UserContextExecution.TryRunAsConsoleUser owns them. With
+    /// nobody signed in they are reported Deferred, never run as SYSTEM. Triggering
+    /// this at the login window is therefore a no-op rather than a way to land HKCU
+    /// writes in SYSTEM's hive.
+    ///
+    /// LoginOnce still honours its run-once record, so this replays only what has
+    /// not already run for that user.
+    /// </summary>
     private static PayloadType[] GetPayloadTypesForTrigger(string triggerPath) => triggerPath switch
     {
         var p when p == Paths.TriggerOnDemand => [PayloadType.OnDemand],
         var p when p == Paths.TriggerOnDemandPrivileged => [PayloadType.OnDemandPrivileged],
+        var p when p == Paths.TriggerLogin => [PayloadType.LoginOnce, PayloadType.LoginEvery],
         var p when p == Paths.TriggerLoginPrivileged => [PayloadType.LoginPrivilegedOnce, PayloadType.LoginPrivilegedEvery],
         _ => []
     };

@@ -385,6 +385,7 @@ public class ExecutionEngine
         {
             Paths.TriggerOnDemand,
             Paths.TriggerOnDemandPrivileged,
+            Paths.TriggerLogin,
             Paths.TriggerLoginPrivileged,
             Paths.TriggerCleanup
         };
