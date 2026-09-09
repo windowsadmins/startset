@@ -208,8 +208,17 @@ public class ExecutionEngine
             }
         }
 
-        // Execute scripts
-        var timeout = TimeSpan.FromSeconds(prefs.ScriptTimeout);
+        // Execute scripts.
+        //
+        // Payloads that run in a signed-in session get the much tighter
+        // LoginScriptTimeout. Someone is waiting at the machine, and because
+        // payloads run sequentially anything one payload blocks on blocks every
+        // payload behind it -- so the cost of a hung script is the whole desktop,
+        // not one setting. ScriptTimeout's hour is for boot and privileged work
+        // that legitimately takes a while and that nobody is watching.
+        var timeout = payloadType.IsUserContext()
+            ? TimeSpan.FromSeconds(prefs.LoginScriptTimeout)
+            : TimeSpan.FromSeconds(prefs.ScriptTimeout);
 
         foreach (var script in scripts.OrderBy(s => s.SortOrder))
         {

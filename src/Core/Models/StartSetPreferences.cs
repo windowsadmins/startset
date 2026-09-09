@@ -75,9 +75,43 @@ public class StartSetPreferences
     /// <summary>
     /// Maximum script execution timeout in seconds.
     /// Default: 3600 (1 hour)
+    ///
+    /// This bound is for payloads nobody is waiting on -- boot and privileged
+    /// work that may legitimately take a long time. Interactive login payloads
+    /// use LoginScriptTimeout instead; see below for why an hour is the wrong
+    /// number there.
     /// </summary>
     [YamlMember(Alias = "script_timeout")]
     public int ScriptTimeout { get; set; } = 3600;
+
+    /// <summary>
+    /// Maximum execution timeout, in seconds, for payloads that run in a signed-in
+    /// user's session -- the login-* and on-demand user contexts.
+    /// Default: 120 (two minutes)
+    ///
+    /// These are bounded far more tightly than ScriptTimeout because someone is
+    /// standing in front of the machine and because payloads run one after
+    /// another: whatever one payload waits for, every payload behind it waits for
+    /// too, and the desktop is unfinished until the batch ends.
+    ///
+    /// An hour is not a timeout for that work, it is the absence of one. Measured
+    /// on a lab workstation on 2026-09-09: a login payload blocked in a
+    /// cross-process call to the shell and the entire batch stopped behind it --
+    /// no taskbar, no wallpaper, no application window, nothing logged as a
+    /// failure. It also blocked shutdown, so the machine could not be restarted
+    /// remotely, and it stalled the software-management agent for eighty minutes,
+    /// because that agent applies payloads through this engine. Four different
+    /// payloads were observed hung the same way that afternoon.
+    ///
+    /// A payload cannot be trusted not to block: anything that touches the shell,
+    /// COM or WinRT can wait indefinitely on a window or a service that is busy,
+    /// and at logon the shell is being restarted by the batch itself. Auditing
+    /// individual payloads does not fix the class -- bounding them does. Two
+    /// minutes is longer than any of these payloads needs and short enough that a
+    /// hung one costs a visible pause rather than the session.
+    /// </summary>
+    [YamlMember(Alias = "login_script_timeout")]
+    public int LoginScriptTimeout { get; set; } = 120;
 
     /// <summary>
     /// Whether to run scripts in parallel within the same payload type.

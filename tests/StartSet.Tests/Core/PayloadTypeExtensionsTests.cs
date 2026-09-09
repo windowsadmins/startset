@@ -122,4 +122,32 @@ public class PayloadTypeExtensionsTests
                     $"PayloadType.{value} is user-context but claims to require elevation");
         }
     }
+
+    // ──────────── timeout boundary ────────────
+
+    [Fact]
+    public void IsUserContext_CoversEveryTypeThatRunsInASession()
+    {
+        // IsUserContext is what selects the short LoginScriptTimeout, so a type
+        // missing from it silently inherits the one-hour bound and can hold a
+        // login batch open again. These are exactly the types that can touch the
+        // shell, COM or WinRT and therefore block on a window that is busy.
+        PayloadType.LoginOnce.IsUserContext().Should().BeTrue();
+        PayloadType.LoginEvery.IsUserContext().Should().BeTrue();
+        PayloadType.OnDemand.IsUserContext().Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsUserContext_ExcludesTheSystemContexts()
+    {
+        // The privileged and boot types run as SYSTEM in session 0, where shell
+        // and user32 calls fail outright rather than blocking, and nobody is
+        // waiting on them -- so they keep the long bound deliberately.
+        PayloadType.BootOnce.IsUserContext().Should().BeFalse();
+        PayloadType.BootEvery.IsUserContext().Should().BeFalse();
+        PayloadType.LoginWindow.IsUserContext().Should().BeFalse();
+        PayloadType.LoginPrivilegedOnce.IsUserContext().Should().BeFalse();
+        PayloadType.LoginPrivilegedEvery.IsUserContext().Should().BeFalse();
+        PayloadType.OnDemandPrivileged.IsUserContext().Should().BeFalse();
+    }
 }
