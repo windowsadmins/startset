@@ -55,4 +55,40 @@ public class StartSetPreferencesTests
     {
         StartSetPreferences.Default.Overrides.Should().BeEmpty();
     }
+
+    // ──────────── login payload timeout ────────────
+
+    [Fact]
+    public void Default_LoginScriptTimeout_IsShort()
+    {
+        // Payloads that run in a signed-in session are bounded tightly on
+        // purpose. They run sequentially, so whatever one waits for the whole
+        // desktop waits for, and someone is standing at the machine. A login
+        // payload that needs minutes has already failed at its job.
+        StartSetPreferences.Default.LoginScriptTimeout.Should().Be(120);
+    }
+
+    [Fact]
+    public void Default_LoginScriptTimeout_IsFarBelowScriptTimeout()
+    {
+        // The regression this guards: login payloads once inherited
+        // ScriptTimeout's hour, which is not a timeout so much as the absence of
+        // one. A payload blocked in a cross-process call to the shell stopped an
+        // entire login batch, blocked shutdown so the machine could not be
+        // restarted remotely, and stalled the software-management agent for
+        // eighty minutes -- all presenting as a frozen desktop with nothing
+        // logged as a failure. Anyone raising this value should have to argue for
+        // it against that.
+        var prefs = StartSetPreferences.Default;
+        prefs.LoginScriptTimeout.Should().BeLessThan(prefs.ScriptTimeout);
+        prefs.LoginScriptTimeout.Should().BeLessThanOrEqualTo(300,
+            "a payload someone is waiting on must not be allowed to hold the session for minutes on end");
+    }
+
+    [Fact]
+    public void Default_LoginScriptTimeout_IsPositive()
+    {
+        // Zero or negative would mean every login payload is killed on the spot.
+        StartSetPreferences.Default.LoginScriptTimeout.Should().BeGreaterThan(0);
+    }
 }
