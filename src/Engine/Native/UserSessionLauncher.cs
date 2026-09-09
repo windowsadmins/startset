@@ -268,8 +268,11 @@ public static class UserSessionLauncher
 
         try
         {
-            var stdoutTask = ReadAllAsync(outRead);
-            var stderrTask = ReadAllAsync(errRead);
+            var stdoutSink = new StringBuilder();
+            var stderrSink = new StringBuilder();
+
+            var stdoutTask = ReadAllAsync(outRead, stdoutSink);
+            var stderrTask = ReadAllAsync(errRead, stderrSink);
 
             var waitMs = timeout == Timeout.InfiniteTimeSpan
                 ? INFINITE
@@ -283,8 +286,50 @@ public static class UserSessionLauncher
                 try { TerminateProcess(pi.hProcess, 1); } catch { }
             }
 
-            var stdout = stdoutTask.GetAwaiter().GetResult();
-            var stderr = stderrTask.GetAwaiter().GetResult();
+            // The script has exited. Its OUTPUT may not have finished, and waiting
+            // for it unbounded is a deadlock with no way out.
+            //
+            // The write ends of these pipes are inheritable, and CreateProcessAsUser
+            // is called with inheritHandles: true, so every descendant gets a copy --
+            // not just the script. A payload whose job is to start something and
+            // leave it running (a tray app, a browser, anything with a window) leaves
+            // that grandchild holding the write end after the script itself exits.
+            // The pipe therefore never reaches EOF, and the read blocks forever.
+            //
+            // Closing our own copies above is not enough; that only covers the
+            // parent. This is the case it misses.
+            //
+            // Measured 2026-09-09 on a lab workstation: a login payload started a
+            // GUI helper, exited, and the helper kept the pipe open. The read never
+            // returned, and because the engine runs payloads sequentially the ENTIRE
+            // login batch stopped at the first script -- no taskbar, no wallpaper,
+            // no laser window -- with nothing logged as a failure. It presented to
+            // the technician as a frozen machine that had to be power-cycled.
+            //
+            // So the drain gets a grace period of its own. Whatever has arrived is
+            // kept; anything still outstanding is abandoned and the batch moves on.
+            // A payload must never be able to wedge a user's session.
+            var drained = Task.WhenAll(stdoutTask, stderrTask).Wait(OutputDrainGrace);
+
+            if (!drained)
+            {
+                // Disposing the read ends makes the abandoned readers fault out of
+                // their pending ReadAsync rather than linger for the life of the
+                // service.
+                outRead.Dispose();
+                errRead.Dispose();
+            }
+
+            string stdout, stderr;
+            lock (stdoutSink) { stdout = stdoutSink.ToString(); }
+            lock (stderrSink) { stderr = stderrSink.ToString(); }
+
+            if (!drained)
+            {
+                stderr = string.IsNullOrEmpty(stderr)
+                    ? OutputAbandonedNote
+                    : stderr.TrimEnd() + Environment.NewLine + OutputAbandonedNote;
+            }
 
             uint exitCode = 0;
             if (!timedOut) GetExitCodeProcess(pi.hProcess, out exitCode);
@@ -304,17 +349,34 @@ public static class UserSessionLauncher
         }
     }
 
-    private static async Task<string> ReadAllAsync(SafeFileHandle handle)
+    /// <summary>
+    /// Drains a pipe into <paramref name="sink"/> as the bytes arrive.
+    ///
+    /// Deliberately incremental rather than ReadToEndAsync. When a payload leaves
+    /// a child running, this task never finishes, and the caller abandons it --
+    /// at which point ReadToEndAsync would have returned nothing at all and the
+    /// script's output would be lost from the log. Appending as we go means the
+    /// caller keeps whatever the script actually managed to write.
+    /// </summary>
+    private static async Task ReadAllAsync(SafeFileHandle handle, StringBuilder sink)
     {
         try
         {
             await using var stream = new FileStream(handle, FileAccess.Read, bufferSize: 4096, isAsync: false);
             using var reader = new StreamReader(stream, Encoding.UTF8);
-            return await reader.ReadToEndAsync();
+
+            var buffer = new char[1024];
+            int read;
+            while ((read = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+            {
+                lock (sink) { sink.Append(buffer, 0, read); }
+            }
         }
         catch
         {
-            return string.Empty;
+            // Includes the handle being disposed out from under us, which is how
+            // the caller unblocks an abandoned read. Whatever reached the sink
+            // before that stands.
         }
     }
 
@@ -322,6 +384,19 @@ public static class UserSessionLauncher
         new(Launched: false, ExitCode: -1, StandardOutput: "", StandardError: "", TimedOut: false, FailureReason: reason);
 
     // ── interop ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// How long to keep draining a payload's output after the payload itself has
+    /// exited. Generous enough that ordinary buffered output is never truncated,
+    /// short enough that a payload which leaves a child holding the pipe costs
+    /// seconds rather than the whole login batch.
+    /// </summary>
+    private static readonly TimeSpan OutputDrainGrace = TimeSpan.FromSeconds(10);
+
+    private const string OutputAbandonedNote =
+        "[startset] the script exited but something it started still holds the output pipe, " +
+        "so the remaining output was abandoned after the drain grace period. This is not a " +
+        "failure of the script; it is how a payload that launches a long-lived child behaves.";
 
     private const uint TOKEN_ALL_ACCESS = 0xF01FF;
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
