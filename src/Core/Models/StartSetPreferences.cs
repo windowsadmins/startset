@@ -179,6 +179,20 @@ public class StartSetPreferences
     /// a payload that arrives in that gap hits exactly the problem this is meant
     /// to avoid.
     /// </summary>
+    /// <summary>
+    /// How long after start-up the service waits for a logon event before concluding
+    /// it missed one and running the login payloads for whoever is already signed in.
+    /// </summary>
+    /// <remarks>
+    /// Covers the gap between the service process starting and its event subscription
+    /// going live. An automatic logon lands in that gap -- measured at under a second
+    /// on the laser workstations -- and the event is then never delivered at all.
+    /// Long enough to let a real event arrive first and win, short enough that a user
+    /// who is already at their desktop is not kept waiting.
+    /// </remarks>
+    [YamlMember(Alias = "logon_catch_up_grace")]
+    public int LogonCatchUpGrace { get; set; } = 20;
+
     [YamlMember(Alias = "shell_settle_delay")]
     public int ShellSettleDelay { get; set; } = 10;
 
