@@ -150,6 +150,39 @@ public class StartSetPreferences
     public int LoginDelay { get; set; } = 0;
 
     /// <summary>
+    /// How long to wait, in seconds, for the user's desktop to come up before
+    /// running their login payloads. Default: 180.
+    ///
+    /// Login payloads are triggered by Security event 4624, which is the
+    /// authentication succeeding -- it fires before userinit, before the shell
+    /// launches, and long before anything is on screen. Running payloads then
+    /// means running them against a desktop that does not exist, which is what
+    /// made them hang: a broadcast to every top-level window, or a SendMessage to
+    /// Progman, has nothing to answer it while Explorer is still starting.
+    ///
+    /// So the payloads now wait for the shell. This is the same rule outset
+    /// applies on the Mac, where login work runs once the user is at their
+    /// desktop rather than while the window server is still coming up.
+    ///
+    /// On timeout the payloads run anyway. A session where the shell never
+    /// appears is unusual, but it is not a reason to skip a user's configuration
+    /// outright, and the execution bounds still apply.
+    /// </summary>
+    [YamlMember(Alias = "shell_ready_timeout")]
+    public int ShellReadyTimeout { get; set; } = 180;
+
+    /// <summary>
+    /// How long to let the shell settle, in seconds, after its process appears
+    /// and before login payloads run. Default: 10.
+    ///
+    /// Explorer's process exists a little before its message pump is serving, and
+    /// a payload that arrives in that gap hits exactly the problem this is meant
+    /// to avoid.
+    /// </summary>
+    [YamlMember(Alias = "shell_settle_delay")]
+    public int ShellSettleDelay { get; set; } = 10;
+
+    /// <summary>
     /// Whether to write script output to individual log files.
     /// Default: true
     /// </summary>
