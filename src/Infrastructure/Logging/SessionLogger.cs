@@ -77,12 +77,23 @@ public class SessionLogger : IDisposable
         // Generate session ID as YYYY-MM-DD-HHMM
         _sessionId = _sessionStart.ToString("yyyy-MM-dd-HHmm");
 
-        // Create day-nested directory: logs/YYYY-MM-DD/HHMM/
+        // Create day-nested directory: logs/YYYY-MM-DD/HHMM-runtype/
+        //
+        // The run type is in the directory name because several sessions run within
+        // the same minute -- boot, login-window and login all start together at a
+        // logon -- and without it they were distinguishable only by an arbitrary _2
+        // or _3 suffix. Anyone looking for what the login payloads did had to open
+        // each one to find out which was which, and picking "the newest" gave the
+        // wrong session more often than not: it cost hours of a live investigation,
+        // reading a boot session's log while diagnosing a stalled login batch and
+        // concluding the wrong script was at fault.
         var dayDir = Path.Combine(Paths.LogDirectory, _sessionStart.ToString("yyyy-MM-dd"));
-        var timeDir = _sessionStart.ToString("HHmm");
+        var timeDir = $"{_sessionStart:HHmm}-{SanitizeRunType(runType)}";
         _sessionDir = Path.Combine(dayDir, timeDir);
 
-        // Handle same-minute collision by appending suffix
+        // Handle same-minute collision by appending suffix. With the run type in the
+        // name this is now genuinely the same kind of session twice in one minute,
+        // rather than three different kinds sharing a slot.
         if (Directory.Exists(_sessionDir))
         {
             for (var i = 2; i <= 9; i++)
@@ -95,6 +106,10 @@ public class SessionLogger : IDisposable
                     break;
                 }
             }
+        }
+        else
+        {
+            _sessionId = $"{_sessionStart:yyyy-MM-dd}-{timeDir}";
         }
 
         Directory.CreateDirectory(_sessionDir);
@@ -362,17 +377,70 @@ public class SessionLogger : IDisposable
                 System.Globalization.DateTimeStyles.None, out _);
     }
 
-    private static bool IsTimeSessionDirectory(string name)
+    internal static bool IsTimeSessionDirectory(string name)
     {
-        // Primary: 4-digit HHMM (e.g. "1430")
-        if (name.Length == 4 && int.TryParse(name, out var hhmm))
-            return hhmm is >= 0 and <= 2359;
+        // Current: HHMM-runtype, optionally with a collision suffix
+        // (e.g. "1430-login", "1430-login_2").
+        //
+        // Legacy forms are still accepted -- plain HHMM and HHMM_N -- because
+        // retention and session lookup walk directories that already exist on every
+        // machine, and refusing to recognise them would strand old sessions: never
+        // cleaned up, and invisible to anyone looking for them.
+        if (name.Length < 4)
+            return false;
 
-        // Collision suffix: HHMM_N (e.g. "1430_2")
-        if (name.Length == 6 && name[4] == '_' && char.IsDigit(name[5]))
-            return int.TryParse(name[..4], out var hhmm2) && hhmm2 is >= 0 and <= 2359;
+        if (!int.TryParse(name.AsSpan(0, 4), out var hhmm) || hhmm is < 0 or > 2359)
+            return false;
 
-        return false;
+        // Plain HHMM.
+        if (name.Length == 4)
+            return true;
+
+        var rest = name.AsSpan(4);
+
+        // Legacy collision suffix: _N
+        if (rest.Length == 2 && rest[0] == '_' && char.IsDigit(rest[1]))
+            return true;
+
+        // Current: -runtype, with an optional _N on the end.
+        if (rest[0] != '-')
+            return false;
+
+        var label = rest[1..];
+        if (label.Length >= 2 && label[^2] == '_' && char.IsDigit(label[^1]))
+            label = label[..^2];
+
+        if (label.Length == 0)
+            return false;
+
+        foreach (var c in label)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '-')
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Reduces a run type to something safe for a directory name. Run types are
+    /// internal constants ("boot", "login", "on-demand"), so this is a guard against
+    /// a future caller passing something with a separator in it rather than an
+    /// expected case.
+    /// </summary>
+    internal static string SanitizeRunType(string runType)
+    {
+        if (string.IsNullOrWhiteSpace(runType))
+            return "session";
+
+        var cleaned = new string(runType
+            .Trim()
+            .ToLowerInvariant()
+            .Select(c => char.IsLetterOrDigit(c) ? c : '-')
+            .ToArray())
+            .Trim('-');
+
+        return cleaned.Length == 0 ? "session" : cleaned;
     }
 
     private static void TryDeleteDirectory(string path)
