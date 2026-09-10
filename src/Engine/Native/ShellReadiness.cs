@@ -136,8 +136,55 @@ public static class ShellReadiness
         }
     }
 
+    /// <summary>
+    /// The user signed in to <paramref name="sessionId"/>, or null when nobody is.
+    /// </summary>
+    /// <remarks>
+    /// Needed because a logon can be missed rather than observed. When the service
+    /// starts after a user is already signed in there is no 4624 to read a username
+    /// from, so it has to be asked of the session directly.
+    ///
+    /// An empty string means the session exists but has no user attached to it --
+    /// the login screen. That is reported as null, not as a user named "".
+    /// </remarks>
+    public static string? GetSessionUserName(int sessionId)
+    {
+        if (sessionId < 0)
+            return null;
+
+        var buffer = IntPtr.Zero;
+        try
+        {
+            if (!WTSQuerySessionInformation(IntPtr.Zero, sessionId, WtsUserName, out buffer, out _))
+                return null;
+
+            var name = System.Runtime.InteropServices.Marshal.PtrToStringUni(buffer);
+            return string.IsNullOrWhiteSpace(name) ? null : name;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (buffer != IntPtr.Zero)
+            {
+                try { WTSFreeMemory(buffer); } catch { }
+            }
+        }
+    }
+
+    private const int WtsUserName = 5;
+
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern uint WTSGetActiveConsoleSessionId();
+
+    [System.Runtime.InteropServices.DllImport("wtsapi32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern bool WTSQuerySessionInformation(
+        IntPtr server, int sessionId, int infoClass, out IntPtr buffer, out int bytesReturned);
+
+    [System.Runtime.InteropServices.DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(IntPtr memory);
 
     private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;
 }

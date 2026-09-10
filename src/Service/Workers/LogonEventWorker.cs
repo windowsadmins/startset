@@ -34,6 +34,9 @@ public class LogonEventWorker : BackgroundService
         {
             SetupEventLogWatcher();
 
+            // A logon that happened before the watcher existed is never delivered.
+            await RunForAlreadySignedInUserAsync(stoppingToken);
+
             // Keep running until cancelled
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
@@ -101,6 +104,34 @@ public class LogonEventWorker : BackgroundService
             var fullUsername = string.IsNullOrEmpty(domain) ? username : $"{domain}\\{username}";
             StartSetLogger.Information("Logon detected for user: {User} (LogonType: {Type})", fullUsername ?? "Unknown", logonType ?? "Unknown");
 
+            // Tells the start-up catch-up that the watcher is delivering events and it
+            // should stand down. Set before the desktop wait rather than after: that
+            // wait can take a minute, and the catch-up must not fire in the meantime.
+            Volatile.Write(ref _observedLogon, 1);
+
+            var sessionId = GetSessionIdForLogon(record);
+            await RunLoginPayloadsAsync(username, sessionId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            StartSetLogger.Error(ex, "Error processing logon event");
+        }
+    }
+
+    /// <summary>
+    /// Runs the login payload batch for <paramref name="username"/> in
+    /// <paramref name="sessionId"/>.
+    /// </summary>
+    /// <remarks>
+    /// Shared by the two ways a logon reaches this worker: the event watcher, and the
+    /// start-up catch-up for a session that was already signed in. They differ only in
+    /// how the user was discovered, so one body means a fix to the batch cannot land on
+    /// one path and miss the other.
+    /// </remarks>
+    private async Task RunLoginPayloadsAsync(string? username, int sessionId, CancellationToken stoppingToken)
+    {
+        try
+        {
             // Wait for the user's desktop before touching it.
             //
             // 4624 is the authentication succeeding, not the desktop appearing.
@@ -110,7 +141,6 @@ public class LogonEventWorker : BackgroundService
             // sit blocked for twenty-four minutes on a lab machine. See
             // ShellReadiness for the full account.
             var prefs = _preferencesService.Preferences;
-            var sessionId = GetSessionIdForLogon(record);
 
             if (sessionId >= 0)
             {
@@ -188,7 +218,86 @@ public class LogonEventWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            StartSetLogger.Error(ex, "Error processing logon event");
+            StartSetLogger.Error(ex, "Error running login payloads");
+        }
+    }
+
+    private int _observedLogon;
+
+    /// <summary>
+    /// Runs the login payloads for a user who was already signed in when the service
+    /// started, when no logon event arrived to do it.
+    /// </summary>
+    /// <remarks>
+    /// EventLogWatcher only ever delivers events written after it is enabled. Anything
+    /// earlier is not queued, not replayed, and not visible -- it is simply gone.
+    ///
+    /// On a workstation configured for automatic logon that is the normal case, not an
+    /// edge case. The console logon happens within a second or two of the service
+    /// starting, landing in the window between the process starting and the
+    /// subscription going live. Measured on a laser workstation: the service process
+    /// started at 15:47:36.214 and the autologon wrote its 4624 at 15:47:36.996. The
+    /// login batch never ran, so the desktop the user sat down at had none of its
+    /// customizations and the laser software was never signed in -- every boot, on a
+    /// machine whose whole purpose is to log itself in.
+    ///
+    /// Deliberately a grace period rather than bookkeeping about which logons have been
+    /// handled. The race is a second or two wide, so waiting briefly and then asking
+    /// "did an event arrive?" settles it without having to identify individual logon
+    /// sessions. If the watcher delivered anything, this stands down.
+    ///
+    /// Running twice is the acceptable failure here and running never is not:
+    /// login-every payloads are idempotent by contract and login-once is gated by its
+    /// own run-once record, so a duplicate costs seconds. That asymmetry is why this
+    /// errs toward running.
+    /// </remarks>
+    private async Task RunForAlreadySignedInUserAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            var prefs = _preferencesService.Preferences;
+            var grace = TimeSpan.FromSeconds(Math.Max(1, prefs.LogonCatchUpGrace));
+
+            await Task.Delay(grace, stoppingToken);
+
+            if (Volatile.Read(ref _observedLogon) != 0)
+            {
+                StartSetLogger.Debug("A logon event arrived during start-up; the catch-up is not needed.");
+                return;
+            }
+
+            var sessionId = ShellReadiness.GetActiveConsoleSessionId();
+            if (sessionId < 0)
+            {
+                StartSetLogger.Debug("No console session attached at start-up; nothing to catch up.");
+                return;
+            }
+
+            var username = ShellReadiness.GetSessionUserName(sessionId);
+            if (string.IsNullOrWhiteSpace(username) || IsSystemAccount(username))
+            {
+                StartSetLogger.Debug("Console session {Session} has no interactive user at start-up; nothing to catch up.", sessionId);
+                return;
+            }
+
+            StartSetLogger.Information(
+                "{User} was already signed in to session {Session} when the service started and no logon event " +
+                "arrived within {Grace}s, so the login payloads are running now. This is the automatic-logon case: " +
+                "the logon precedes the event subscription, so the event is never delivered.",
+                username, sessionId, grace.TotalSeconds);
+
+            Volatile.Write(ref _observedLogon, 1);
+
+            await RunLoginPayloadsAsync(username, sessionId, stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Service is stopping.
+        }
+        catch (Exception ex)
+        {
+            // Never fatal: the watcher remains the primary path.
+            StartSetLogger.Error(ex, "The start-up login catch-up failed");
         }
     }
 
