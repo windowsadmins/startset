@@ -86,6 +86,51 @@ public class StartSetPreferencesTests
     }
 
     [Fact]
+    public void Default_LoginBatchBudget_BoundsTheWholeBatch()
+    {
+        // The per-script bound multiplies: twelve payloads each burning
+        // LoginScriptTimeout is twenty-four minutes of unfinished desktop, which
+        // the person at the machine cannot tell apart from the hang it replaced.
+        // Measured on a lab workstation 2026-09-09, where consecutive payloads
+        // timed out one after another exactly as that arithmetic predicts.
+        var prefs = StartSetPreferences.Default;
+        prefs.LoginBatchBudget.Should().Be(300);
+        prefs.LoginBatchBudget.Should().BeGreaterThan(prefs.LoginScriptTimeout,
+            "a batch must be allowed to run at least one full-length payload");
+        prefs.LoginBatchBudget.Should().BeLessThan(prefs.LoginScriptTimeout * 12,
+            "the whole point is that the batch cannot cost the sum of every payload's timeout");
+    }
+
+    [Fact]
+    public void Default_ShellReadyTimeout_WaitsForTheDesktop()
+    {
+        // Login payloads are triggered by event 4624, which fires when
+        // authentication succeeds -- before userinit, before the shell exists.
+        // Running them then is what made them hang, because a payload that asks
+        // the shell for something before there is a shell simply waits. A zero
+        // here would restore exactly that.
+        StartSetPreferences.Default.ShellReadyTimeout.Should().BeGreaterThan(0);
+        StartSetPreferences.Default.ShellReadyTimeout.Should().Be(180);
+    }
+
+    [Fact]
+    public void Default_ShellSettleDelay_IsNonZero()
+    {
+        // Explorer's process exists slightly before its message pump is serving,
+        // and a payload arriving in that gap hits the very problem the readiness
+        // wait exists to avoid.
+        StartSetPreferences.Default.ShellSettleDelay.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Default_ShellReadyTimeout_ExceedsTheSettleDelay()
+    {
+        var prefs = StartSetPreferences.Default;
+        prefs.ShellReadyTimeout.Should().BeGreaterThan(prefs.ShellSettleDelay,
+            "the wait has to leave room for the shell to appear and then settle");
+    }
+
+    [Fact]
     public void Default_LoginScriptTimeout_IsPositive()
     {
         // Zero or negative would mean every login payload is killed on the spot.

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using StartSet.Core.Enums;
 using StartSet.Engine;
 using StartSet.Infrastructure.Configuration;
+using StartSet.Engine.Native;
 using StartSet.Infrastructure.Logging;
 
 namespace StartSet.Service.Workers;
@@ -100,11 +101,37 @@ public class LogonEventWorker : BackgroundService
             var fullUsername = string.IsNullOrEmpty(domain) ? username : $"{domain}\\{username}";
             StartSetLogger.Information("Logon detected for user: {User} (LogonType: {Type})", fullUsername ?? "Unknown", logonType ?? "Unknown");
 
-            // Add configurable delay if set
-            var delay = _preferencesService.Preferences.LoginDelay;
+            // Wait for the user's desktop before touching it.
+            //
+            // 4624 is the authentication succeeding, not the desktop appearing.
+            // Starting payloads here means starting them before userinit has run
+            // and before the shell exists, and a payload that asks the shell for
+            // something then simply waits -- which is how a login batch came to
+            // sit blocked for twenty-four minutes on a lab machine. See
+            // ShellReadiness for the full account.
+            var prefs = _preferencesService.Preferences;
+            var sessionId = GetSessionIdForLogon(record);
+
+            if (sessionId >= 0)
+            {
+                await ShellReadiness.WaitForDesktopAsync(
+                    sessionId,
+                    TimeSpan.FromSeconds(prefs.ShellReadyTimeout),
+                    TimeSpan.FromSeconds(prefs.ShellSettleDelay),
+                    CancellationToken.None);
+            }
+            else
+            {
+                StartSetLogger.Warning(
+                    "Could not determine the session for this logon, so the desktop readiness wait was skipped. " +
+                    "Payloads may run before the shell is up.");
+            }
+
+            // Any additional configured delay is applied on top.
+            var delay = prefs.LoginDelay;
             if (delay > 0)
             {
-                StartSetLogger.Debug("Waiting {Delay}s before running login scripts", delay);
+                StartSetLogger.Debug("Waiting a further {Delay}s before running login scripts", delay);
                 await Task.Delay(TimeSpan.FromSeconds(delay));
             }
 
@@ -164,6 +191,37 @@ public class LogonEventWorker : BackgroundService
             StartSetLogger.Error(ex, "Error processing logon event");
         }
     }
+
+    /// <summary>
+    /// Session the logon belongs to. Event 4624 does not carry a session id, but
+    /// TargetLogonId identifies the logon session, and that maps to the Terminal
+    /// Services session the shell will start in. Falls back to the active console
+    /// session, which is the right answer on these single-seat machines.
+    /// </summary>
+    private static int GetSessionIdForLogon(System.Diagnostics.Eventing.Reader.EventRecord record)
+    {
+        try
+        {
+            var sessionValue = GetEventDataValue(record, "SessionId");
+            if (!string.IsNullOrWhiteSpace(sessionValue) && int.TryParse(sessionValue, out var parsed))
+                return parsed;
+        }
+        catch { }
+
+        try
+        {
+            var console = (int)WTSGetActiveConsoleSessionId();
+            // 0xFFFFFFFF means no session is attached to the console right now.
+            return console == -1 ? -1 : console;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint WTSGetActiveConsoleSessionId();
 
     private static string? GetEventDataValue(EventRecord record, string name)
     {
