@@ -185,6 +185,12 @@ $script:OutputDir = Join-Path $RootDir 'release'
 $script:BuildDir = Join-Path $RootDir 'build'
 $script:SrcDir = Join-Path $RootDir 'src'
 
+# The install scripts have one copy, in scripts/, because that is the copy the
+# packaging tool reads out of the repository as checked out. build.ps1 stages the
+# same files rather than keeping its own set under build/pkg/: when it did, the two
+# drifted and the packaged output silently shipped the older text.
+$script:InstallScriptsDir = Join-Path $RootDir 'scripts'
+
 #region Certificate and Signing Functions
 
 function Test-Command {
@@ -689,19 +695,15 @@ function Build-MsiPackage {
     $scriptsDir = Join-Path $msiTempDir "scripts"
     New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
 
-    $postinstallTemplatePath = Join-Path $BuildDir "pkg\postinstall.ps1"
+    $postinstallTemplatePath = Join-Path $InstallScriptsDir "postinstall.ps1"
     if (Test-Path $postinstallTemplatePath) {
-        $postinstallContent = Get-Content $postinstallTemplatePath -Raw
-        $postinstallContent = $postinstallContent -replace '\{\{VERSION\}\}', $Version.Full
-        $postinstallContent | Set-Content (Join-Path $scriptsDir "postinstall.ps1") -Encoding UTF8
+        Copy-Item $postinstallTemplatePath (Join-Path $scriptsDir "postinstall.ps1") -Force
         Write-BuildLog "Added postinstall.ps1 script" "INFO"
     }
 
-    $preinstallTemplatePath = Join-Path $BuildDir "pkg\preinstall.ps1"
+    $preinstallTemplatePath = Join-Path $InstallScriptsDir "preinstall.ps1"
     if (Test-Path $preinstallTemplatePath) {
-        $preinstallContent = Get-Content $preinstallTemplatePath -Raw
-        $preinstallContent = $preinstallContent -replace '\{\{VERSION\}\}', $Version.Full
-        $preinstallContent | Set-Content (Join-Path $scriptsDir "preinstall.ps1") -Encoding UTF8
+        Copy-Item $preinstallTemplatePath (Join-Path $scriptsDir "preinstall.ps1") -Force
         Write-BuildLog "Added preinstall.ps1 script" "INFO"
     }
 
@@ -901,23 +903,19 @@ function Build-PkgPackage {
     $scriptsDir = Join-Path $pkgTempDir "scripts"
     New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
     
-    # Copy and process postinstall script from build/pkg/ template
-    $postinstallTemplatePath = Join-Path $BuildDir "pkg\postinstall.ps1"
+    # Stage the postinstall script from its one copy in scripts/.
+    $postinstallTemplatePath = Join-Path $InstallScriptsDir "postinstall.ps1"
     if (Test-Path $postinstallTemplatePath) {
-        $postinstallContent = Get-Content $postinstallTemplatePath -Raw
-        $postinstallContent = $postinstallContent -replace '\{\{VERSION\}\}', $Version.Full
-        $postinstallContent | Set-Content (Join-Path $scriptsDir "postinstall.ps1") -Encoding UTF8
+        Copy-Item $postinstallTemplatePath (Join-Path $scriptsDir "postinstall.ps1") -Force
         Write-BuildLog "Added postinstall.ps1 script to .pkg" "INFO"
     } else {
         Write-BuildLog "Postinstall template not found: $postinstallTemplatePath" "WARNING"
     }
     
-    # Copy and process preinstall script from build/pkg/ template
-    $preinstallTemplatePath = Join-Path $BuildDir "pkg\preinstall.ps1"
+    # Stage the preinstall script from its one copy in scripts/.
+    $preinstallTemplatePath = Join-Path $InstallScriptsDir "preinstall.ps1"
     if (Test-Path $preinstallTemplatePath) {
-        $preinstallContent = Get-Content $preinstallTemplatePath -Raw
-        $preinstallContent = $preinstallContent -replace '\{\{VERSION\}\}', $Version.Full
-        $preinstallContent | Set-Content (Join-Path $scriptsDir "preinstall.ps1") -Encoding UTF8
+        Copy-Item $preinstallTemplatePath (Join-Path $scriptsDir "preinstall.ps1") -Force
         Write-BuildLog "Added preinstall.ps1 script to .pkg" "INFO"
     } else {
         Write-BuildLog "Preinstall template not found: $preinstallTemplatePath" "WARNING"
