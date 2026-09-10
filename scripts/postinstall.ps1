@@ -7,16 +7,24 @@
     It creates necessary directories and installs the StartSet Windows service.
 #>
 
+# This file is the one copy. Both things that package StartSet read it from here:
+# the packaging tool, which reads scripts/ out of the repository as checked out, and
+# build.ps1, which stages it into the MSI and .nupkg it builds.
+#
+# There used to be a second copy under build/pkg/ that build.ps1 read instead. The
+# two drifted, and because the packaging tool takes this one, a fix could be written,
+# reviewed, merged and tagged in the copy build.ps1 used while every machine kept
+# installing the old text -- which is exactly what happened with the bounded service
+# stop below: it was released and did not reach a single machine.
+
+# Output goes to stdout only. The packaging tool captures it and the client folds it
+# into the managed-install session log, which is the record that gets collected.
+# This used to Start-Transcript into a file under the StartSet data directory, which
+# diverted the output away from that capture: the file sat where nothing reads it and
+# the session log recorded nothing at all.
 $ErrorActionPreference = 'Stop'
 
 try {
-    $logDir = "C:\ProgramData\ManagedState\logs"
-    if (-not (Test-Path $logDir)) {
-        New-Item -Path $logDir -ItemType Directory -Force | Out-Null
-    }
-
-    Start-Transcript -Path "$logDir\postinstall.log" -Append
-
     Write-Host "=========================================="
     Write-Host "StartSet Post-Installation"
     Write-Host "=========================================="
@@ -36,7 +44,7 @@ try {
     } else {
         Write-Host "  $installDir already in system PATH"
     }
-
+    
     # Create required directories
     $directories = @(
         "$startsetDataDir\boot-every",
@@ -104,7 +112,7 @@ try {
     Write-Host "  Starting service..."
     Start-Service -Name $serviceName
     Start-Sleep -Seconds 2
-
+    
     $serviceStatus = Get-Service -Name $serviceName
     if ($serviceStatus.Status -eq 'Running') {
         Write-Host "    Service started successfully"
@@ -118,15 +126,12 @@ try {
     Write-Host "=========================================="
     Write-Host ""
 
-    Stop-Transcript
     exit 0
 }
 catch {
     Write-Host ""
     Write-Host "ERROR: $_" -ForegroundColor Red
     Write-Host $_.ScriptStackTrace -ForegroundColor Red
-
-    try { Stop-Transcript } catch {}
-
+    
     exit 1
 }
