@@ -220,10 +220,48 @@ public class ExecutionEngine
             ? TimeSpan.FromSeconds(prefs.LoginScriptTimeout)
             : TimeSpan.FromSeconds(prefs.ScriptTimeout);
 
-        foreach (var script in scripts.OrderBy(s => s.SortOrder))
+        // A per-script timeout bounds one payload; it does not bound the batch.
+        // Twelve payloads each burning their own timeout is still an unusable
+        // desktop for as long as they take, and the person standing at the machine
+        // cannot tell that from the hang it replaced. So the batch gets a deadline
+        // of its own, and when it is spent the rest of the batch is abandoned and
+        // the session released.
+        //
+        // The abandoned payloads are recorded by name rather than simply left out.
+        // "Nothing was logged" is precisely how this class of failure hid for so
+        // long, and a payload that did not run should say so.
+        var batchDeadline = payloadType.IsUserContext()
+            ? DateTimeOffset.UtcNow.AddSeconds(prefs.LoginBatchBudget)
+            : DateTimeOffset.MaxValue;
+
+        var ordered = scripts.OrderBy(s => s.SortOrder).ToList();
+
+        for (var index = 0; index < ordered.Count; index++)
         {
+            var script = ordered[index];
+
             if (cancellationToken.IsCancellationRequested)
                 break;
+
+            if (DateTimeOffset.UtcNow >= batchDeadline && !script.ShouldSkip)
+            {
+                var remaining = ordered.Skip(index).Where(s => !s.ShouldSkip).ToList();
+
+                StartSetLogger.Warning(
+                    "Login batch budget of {Budget}s is spent. Abandoning {Count} payload(s) so the session is not held any longer: {Names}. They run again at the next logon.",
+                    prefs.LoginBatchBudget, remaining.Count,
+                    string.Join(", ", remaining.Select(s => s.FileName)));
+
+                foreach (var skipped in remaining)
+                {
+                    var deferred = ExecutionResult.Deferred(skipped,
+                        $"Not run: the login batch budget of {prefs.LoginBatchBudget}s was already spent by earlier payloads");
+                    results.Add(deferred);
+                    StartSetLogger.Session?.RecordPayloadOutcome(skipped, deferred);
+                }
+
+                break;
+            }
 
             ExecutionResult result;
 

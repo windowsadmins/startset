@@ -114,6 +114,28 @@ public class StartSetPreferences
     public int LoginScriptTimeout { get; set; } = 120;
 
     /// <summary>
+    /// Total wall-clock budget, in seconds, for one batch of user-session
+    /// payloads. Default: 300 (five minutes).
+    ///
+    /// LoginScriptTimeout bounds a single payload; this bounds the batch. Both
+    /// are needed, because a per-script bound alone still multiplies: twelve
+    /// payloads that each burn their two minutes is twenty-four minutes of
+    /// unfinished desktop, and the person at the machine cannot tell that from
+    /// the hang it replaced.
+    ///
+    /// When the budget is spent the remaining payloads are not run. They are
+    /// recorded as deferred -- explicitly, by name, so what did not happen is
+    /// visible rather than merely absent -- and the batch ends so the session is
+    /// released. They run again at the next logon.
+    ///
+    /// Ordering is preserved rather than parallelised on purpose: these payloads
+    /// depend on each other, and running them concurrently trades a stall for a
+    /// race. Giving up the tail of the batch is the safer failure.
+    /// </summary>
+    [YamlMember(Alias = "login_batch_budget")]
+    public int LoginBatchBudget { get; set; } = 300;
+
+    /// <summary>
     /// Whether to run scripts in parallel within the same payload type.
     /// Default: false (sequential execution)
     /// </summary>
