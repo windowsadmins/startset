@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using StartSet.Core.Enums;
 using StartSet.Engine;
 using StartSet.Infrastructure.Configuration;
+using StartSet.Engine.Native;
 using StartSet.Infrastructure.Logging;
 
 namespace StartSet.Service.Workers;

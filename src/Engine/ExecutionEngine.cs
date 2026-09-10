@@ -1,4 +1,5 @@
 using StartSet.Core.Constants;
+using StartSet.Engine.Native;
 using StartSet.Core.Enums;
 using StartSet.Core.Models;
 using StartSet.Engine.Interfaces;
@@ -230,6 +231,10 @@ public class ExecutionEngine
         // The abandoned payloads are recorded by name rather than simply left out.
         // "Nothing was logged" is precisely how this class of failure hid for so
         // long, and a payload that did not run should say so.
+        // Session the payloads will run in. Used to confirm the desktop is up
+        // before each one; -1 when there is no console session to check.
+        var sessionId = ShellReadiness.GetActiveConsoleSessionId();
+
         var batchDeadline = payloadType.IsUserContext()
             ? DateTimeOffset.UtcNow.AddSeconds(prefs.LoginBatchBudget)
             : DateTimeOffset.MaxValue;
@@ -272,6 +277,29 @@ public class ExecutionEngine
             }
             else
             {
+                // Re-check the desktop before EVERY user-context payload, not once
+                // per batch.
+                //
+                // Several of these payloads restart Explorer as part of their job --
+                // applying a taskbar layout, changing folder options, rebuilding the
+                // Start menu. So the shell that was up when the batch began is torn
+                // down partway through it, and the next payload in line meets no
+                // shell at all. Measured on a lab workstation 2026-09-09: Explorer's
+                // start time was twenty-nine minutes after boot, mid-batch, while
+                // every payload behind it timed out in turn.
+                //
+                // Waiting once at the start of the batch does not survive that. The
+                // check is a process lookup, so paying it per payload costs
+                // nothing when the shell is healthy.
+                if (payloadType.IsUserContext() && sessionId >= 0)
+                {
+                    await ShellReadiness.WaitForDesktopAsync(
+                        sessionId,
+                        TimeSpan.FromSeconds(prefs.ShellReadyTimeout),
+                        TimeSpan.FromSeconds(prefs.ShellSettleDelay),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
                 result = await ExecuteScriptAsync(script, timeout, cancellationToken);
 
                 // Write per-script output log if enabled

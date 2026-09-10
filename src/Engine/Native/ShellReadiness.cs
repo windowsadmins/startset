@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using StartSet.Infrastructure.Logging;
 
-namespace StartSet.Service.Workers;
+namespace StartSet.Engine.Native;
 
 /// <summary>
 /// Decides when a user's desktop is actually there to be worked on.
@@ -35,7 +35,7 @@ namespace StartSet.Service.Workers;
 /// stay as safeguards for a script that is genuinely broken; this stops well
 /// behaved scripts being asked to do the impossible.
 /// </summary>
-internal static class ShellReadiness
+public static class ShellReadiness
 {
     /// <summary>
     /// Waits until the shell is up for <paramref name="sessionId"/>, or until
@@ -117,6 +117,27 @@ internal static class ShellReadiness
 
         return null;
     }
+
+    /// <summary>
+    /// The session currently attached to the console, or -1 when none is.
+    /// These are single-seat lab machines, so the console session is the user's
+    /// session.
+    /// </summary>
+    public static int GetActiveConsoleSessionId()
+    {
+        try
+        {
+            var id = unchecked((int)WTSGetActiveConsoleSessionId());
+            return id == -1 ? -1 : id;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint WTSGetActiveConsoleSessionId();
 
     private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;
 }
