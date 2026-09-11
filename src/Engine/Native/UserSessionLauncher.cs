@@ -95,11 +95,32 @@ public static class UserSessionLauncher
         string workingDirectory,
         TimeSpan timeout)
     {
+        // Each native step is timed and logged.
+        //
+        // When this sequence blocks there is nothing to see from outside: the engine
+        // logs "Executing <script>", the launch never returns, and the per-script
+        // timeout reports "Script timed out in user session" -- which reads as though
+        // the script ran and hung. It did not. On a lab workstation a payload that
+        // only printed three lines and exited timed out identically, and no child
+        // process was ever created, so the block was somewhere in here rather than in
+        // any script. Four candidate calls and no way to tell which.
+        //
+        // These are Debug, so they cost nothing normally and name the exact call the
+        // next time it happens.
+        var launchTimer = System.Diagnostics.Stopwatch.StartNew();
+
+        void Step(string call) =>
+            StartSetLogger.Debug("User-session launch: {Call} at {Elapsed:N1}s", call, launchTimer.Elapsed.TotalSeconds);
+
+        Step("acquiring console user token");
+
         if (!TryGetConsoleUserToken(out var userToken, out var failure))
             return Fail(failure);
 
         using (userToken)
         {
+            Step("DuplicateTokenEx");
+
             if (!DuplicateTokenEx(
                     userToken,
                     TOKEN_ALL_ACCESS,
@@ -117,8 +138,16 @@ public static class UserSessionLauncher
                 // Without the user's environment block the child inherits none of
                 // their profile paths -- USERPROFILE, APPDATA and LOCALAPPDATA all
                 // matter to login scripts.
+                //
+                // This one talks to the User Profile Service, so it is the most
+                // likely of the four to block on a machine carrying hundreds of
+                // stale profiles.
+                Step("CreateEnvironmentBlock");
+
                 if (!CreateEnvironmentBlock(out envBlock, primaryToken, false))
                     envBlock = IntPtr.Zero;
+
+                Step("CreateProcessAsUser");
 
                 try
                 {
