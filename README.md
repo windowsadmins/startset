@@ -37,7 +37,8 @@ C:\ProgramData\ManagedState\
 ├── on-demand\              # User-context on-demand scripts
 ├── on-demand-privileged\   # Elevated on-demand scripts
 ├── share\                  # Shared data directory
-├── Config.yaml             # Configuration file
+├── triggers\               # Trigger files; the only folder users may create files in
+├── Config.yaml             # Legacy configuration file
 └── logs\                   # Log files
     └── startset.log
 
@@ -109,61 +110,72 @@ managedstatekeeper --version
 
 ## Configuration
 
-Create `C:\ProgramData\ManagedState\Config.yaml`:
+Each setting is read from the first of these that sets it:
 
-```yaml
-# Wait for network before running boot scripts
-wait_for_network: true
-network_timeout: 180  # seconds
+1. A one-off flag for this run (`--verbose`, `--debug`).
+2. Policy: `HKLM\SOFTWARE\Policies\StartSet`, for Group Policy or MDM.
+3. Machine settings: `HKLM\SOFTWARE\StartSet\Settings`, written by `managedstatekeeper add-ignored-user` and the other settings commands, or by an administrator.
+4. The legacy `C:\ProgramData\ManagedState\Config.yaml`.
+5. The built-in default.
 
-# Continue even if network wait fails
-ignore_network_failure: false
+Environment variables are not a source. Both registry keys are read in the 64-bit view.
 
-# Logging
-verbose: false
-debug: false
+Every setting can be set at every level. In the registry the value name is the setting's name below, with booleans and numbers as `REG_DWORD` and lists as `REG_MULTI_SZ`; the Config.yaml name (`wait_for_network`) is accepted as an alias.
 
-# Script execution
-script_timeout: 3600  # seconds
-parallel_execution: false
+| Setting | Config.yaml | Default |
+|---|---|---|
+| `WaitForNetwork` | `wait_for_network` | `1` |
+| `NetworkTimeout` | `network_timeout` | `180` seconds |
+| `IgnoreNetworkFailure` | `ignored_network_failure` | `0` |
+| `Verbose` | `verbose` | `0` |
+| `Debug` | `debug` | `0` |
+| `LogLevel` | `log_level` | unset |
+| `ChecksumValidation` | `checksum_validation` | `0` |
+| `AllowedExtensions` | `allowed_extensions` | `.ps1 .cmd .bat .exe .msi .msix` |
+| `ScriptTimeout` | `script_timeout` | `3600` seconds |
+| `LoginScriptTimeout` | `login_script_timeout` | `120` seconds |
+| `LoginBatchBudget` | `login_batch_budget` | `300` seconds |
+| `ParallelExecution` | `parallel_execution` | `0` |
+| `LoginDelay` | `login_delay` | `0` seconds |
+| `ShellReadyTimeout` | `shell_ready_timeout` | `180` seconds |
+| `ShellSettleDelay` | `shell_settle_delay` | `10` seconds |
+| `LogonCatchUpGrace` | `logon_catch_up_grace` | `20` seconds |
+| `LogScriptOutput` | `log_script_output` | `1` |
+| `IgnoredUsers` | `ignored_users` | empty |
+| `Overrides` | `overrides` | empty |
 
-# Allowed script extensions
-allowed_extensions:
-  - .ps1
-  - .cmd
-  - .bat
-  - .exe
-  - .msi
-  - .msix
+To set a timeout by policy:
 
-# Checksum validation (for extra security)
-checksum_validation: false
+```powershell
+New-Item -Path 'HKLM:\SOFTWARE\Policies\StartSet' -Force | Out-Null
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\StartSet' -Name NetworkTimeout -Value 60 -Type DWord
+```
 
-# Delay before login scripts (seconds)
-login_delay: 0
+## Permissions
 
-# Log script output to individual files
-log_script_output: true
+The service runs as SYSTEM and executes what is under `C:\ProgramData\ManagedState`, so the installer makes that folder writable only by Administrators and SYSTEM (Users can read it), with inheritance from ProgramData turned off. The service applies the same ACL each time it starts.
 
-# Users to ignore for login script execution
-ignored_users: []
-  # - serviceaccount
-  # - kiosk
+A payload, or `Config.yaml`, that a non-administrator could write is not used: it is skipped and the run log says why. That covers a file owned by anyone other than SYSTEM, Administrators or TrustedInstaller, a file or folder with an entry that lets a standard user change it, and a link. A payload copied in by an account whose own SID owns the file (rather than the Administrators group) is skipped for the same reason; give it to Administrators to run it:
 
-# Scripts to force re-run (override run-once tracking)
-overrides: []
-  # - myscript.ps1
+```powershell
+icacls 'C:\ProgramData\ManagedState\login-every\setup.ps1' /setowner '*S-1-5-32-544'
 ```
 
 ## Trigger Files
 
-Create these files to trigger script execution:
+Create one of these files to run payloads now. The service watches `C:\ProgramData\ManagedState\triggers`, the one folder a standard user may create files in, and the data root itself:
 
 - `.startset.ondemand` - Triggers on-demand scripts
-- `.startset.ondemand-privileged` - Triggers privileged on-demand scripts
 - `.startset.login` - Runs the login scripts now, in the signed-in user's session
+- `.startset.ondemand-privileged` - Triggers privileged on-demand scripts
 - `.startset.login-privileged` - Runs the login-privileged scripts now, as SYSTEM
 - `.startset.cleanup` - Triggers cleanup of trigger files
+
+Anyone may create the first two. The others run payloads as SYSTEM, so they are honoured only when an administrator created the file; one a standard user created is deleted and logged.
+
+```powershell
+New-Item -ItemType File 'C:\ProgramData\ManagedState\triggers\.startset.ondemand'
+```
 
 ## Building from Source
 

@@ -50,7 +50,7 @@ public static class OverrideCommand
             {
                 try
                 {
-                    preferencesService.Save(prefs);
+                    preferencesService.SaveMachineSetting(nameof(prefs.Overrides), prefs.Overrides);
                     foreach (var script in added)
                     {
                         Console.WriteLine($"Added override: {script}");
@@ -150,7 +150,7 @@ public static class OverrideCommand
             {
                 try
                 {
-                    preferencesService.Save(prefs);
+                    preferencesService.SaveMachineSetting(nameof(prefs.Overrides), prefs.Overrides);
                     foreach (var script in removed)
                     {
                         Console.WriteLine($"Removed override: {script}");

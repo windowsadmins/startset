@@ -30,8 +30,11 @@ public class Program
             return 0;
         }
 
-        // Initialize logging
+        // Initialize logging. --verbose and --debug are one-off flags for this run and so
+        // outrank policy; everything else comes from policy, machine settings, Config.yaml
+        // or the default, in that order.
         var preferencesService = new PreferencesService();
+        preferencesService.SetCommandLineOverrides(CommandLineOverrides(args));
         preferencesService.Load();
         StartSetLogger.Initialize(preferencesService.Preferences, isService: false);
 
@@ -68,6 +71,17 @@ public class Program
         {
             StartSetLogger.CloseAndFlush();
         }
+    }
+
+    /// <summary>The settings this run's global flags set, by setting name.</summary>
+    internal static Dictionary<string, object?> CommandLineOverrides(string[] args)
+    {
+        var overrides = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (args.Any(a => a is "--verbose" or "-v"))
+            overrides["Verbose"] = true;
+        if (args.Any(a => a is "--debug" or "-d"))
+            overrides["Debug"] = true;
+        return overrides;
     }
 
     private static RootCommand BuildRootCommand(PreferencesService preferencesService)

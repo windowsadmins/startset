@@ -26,3 +26,4 @@ logs/
 # Environment
 .env
 .env.local
+/.worktrees/

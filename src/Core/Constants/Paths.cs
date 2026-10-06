@@ -40,7 +40,18 @@ public static class Paths
     public const string InstallLogDirectory = @"C:\ProgramData\ManagedState\logs\installs";
     public const int MaxRetentionDays = 30;
     
-    // Trigger files (matching outset pattern)
+    // Settings. Precedence, highest first: a one-off command-line flag, policy, machine
+    // settings, the legacy Config.yaml, the built-in default. Both keys are read in the
+    // 64-bit registry view.
+    public const string PolicyRegistryPath = @"SOFTWARE\Policies\StartSet";
+    public const string MachineSettingsRegistryPath = @"SOFTWARE\StartSet\Settings";
+
+    // The one folder under ScriptRoot a standard user may create files in. Everything
+    // else under ScriptRoot is writable only by Administrators and SYSTEM, so a user who
+    // needs an on-demand run drops a trigger file here instead of being given write access.
+    public const string TriggerDirectory = @"C:\ProgramData\ManagedState\triggers";
+
+    // Trigger files (matching outset pattern). Honoured here and in TriggerDirectory.
     public const string TriggerOnDemand = @"C:\ProgramData\ManagedState\.startset.ondemand";
     public const string TriggerOnDemandPrivileged = @"C:\ProgramData\ManagedState\.startset.ondemand-privileged";
     public const string TriggerLogin = @"C:\ProgramData\ManagedState\.startset.login";
@@ -62,6 +73,7 @@ public static class Paths
         OnDemandDir,
         OnDemandPrivilegedDir,
         ShareDir,
+        TriggerDirectory,
         LogDirectory,
         ReportsDirectory
     ];

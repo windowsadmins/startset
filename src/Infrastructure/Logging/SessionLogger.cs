@@ -112,14 +112,29 @@ public class SessionLogger : IDisposable
             _sessionId = $"{_sessionStart:yyyy-MM-dd}-{timeDir}";
         }
 
-        Directory.CreateDirectory(_sessionDir);
-        Directory.CreateDirectory(Paths.ReportsDirectory);
+        // The log tree is writable only by administrators and SYSTEM. A standard user
+        // running an on-demand payload from the CLI still gets the run, and its output
+        // on the console; it just leaves no session behind.
+        var writable = true;
+        try
+        {
+            Directory.CreateDirectory(_sessionDir);
+            Directory.CreateDirectory(Paths.ReportsDirectory);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            writable = false;
+            Console.Error.WriteLine($"[WARN] No session log written: {Paths.LogDirectory} is writable only by administrators");
+        }
 
-        // Perform retention cleanup (async, non-blocking)
-        Task.Run(PerformRetentionCleanup);
+        if (writable)
+        {
+            // Perform retention cleanup (async, non-blocking)
+            Task.Run(PerformRetentionCleanup);
 
-        // Initialize log files
-        InitializeLogFiles();
+            // Initialize log files
+            InitializeLogFiles();
+        }
 
         // Initialize session data
         _sessionData = new SessionData
