@@ -1,0 +1,110 @@
+<Page
+    x:Class="StartSet.App.Views.LogsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    NavigationCacheMode="Required">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ═══ Shared Toolbar Row ═══ -->
+
+        <!-- Left: Log Sessions title + action buttons -->
+        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8"
+                    Padding="16,10" VerticalAlignment="Center">
+            <TextBlock Text="Log Sessions" Style="{StaticResource SubtitleTextBlockStyle}"
+                       VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <Button x:Name="OpenEditorBtn" ToolTipService.ToolTip="Open in editor"
+                        Click="OpenEditor_Click" Padding="6" VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                </Button>
+                <Button x:Name="OpenFolderBtn" ToolTipService.ToolTip="Open log folder"
+                        Click="OpenFolder_Click" Padding="6" VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE838;" FontSize="14" />
+                </Button>
+                <Button ToolTipService.ToolTip="Refresh" Click="Refresh_Click"
+                        Padding="6" VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                </Button>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Right: Filter toolbar (same row for alignment) -->
+        <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" Spacing="8"
+                    Padding="16,10" VerticalAlignment="Center">
+            <FontIcon Glyph="&#xE71C;" FontSize="14"
+                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                      VerticalAlignment="Center" />
+            <TextBox x:Name="FilterBox" PlaceholderText="Filter log..."
+                     Width="300" TextChanged="FilterBox_TextChanged"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- Shared separator spanning all columns -->
+        <MenuFlyoutSeparator Grid.Row="1" Grid.ColumnSpan="3" />
+
+        <!-- ═══ Left: File List ═══ -->
+        <ListView x:Name="LogFileList" Grid.Row="2" Grid.Column="0"
+                  SelectionChanged="LogFileList_SelectionChanged">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid Padding="4,8" ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Grid.Column="0" Glyph="&#xE9D5;" FontSize="16"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                  VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="{Binding DisplayDate}" />
+                            <TextBlock Text="{Binding DisplayRunType}" FontSize="11"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Text="{Binding DisplaySize}" FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!-- ═══ Splitter ═══ -->
+        <Border Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Width="1"
+                Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+
+        <!-- ═══ Right: Log Content ═══ -->
+        <Grid Grid.Row="2" Grid.Column="2">
+            <!-- Log output -->
+            <ScrollViewer Padding="12"
+                          Background="{ThemeResource SystemControlBackgroundChromeMediumLowBrush}">
+                <RichTextBlock x:Name="LogOutput" IsTextSelectionEnabled="True"
+                               FontFamily="Cascadia Mono, Consolas, Courier New" FontSize="12"
+                               TextWrapping="Wrap" Padding="4,0" />
+            </ScrollViewer>
+
+            <!-- Empty state -->
+            <StackPanel x:Name="EmptyState"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Spacing="8">
+                <FontIcon Glyph="&#xE7C3;" FontSize="48"
+                          Foreground="{ThemeResource TextFillColorDisabledBrush}" />
+                <TextBlock Text="No Log Selected" Style="{StaticResource SubtitleTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="Select a log session from the sidebar to view its contents."
+                           Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>

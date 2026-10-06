@@ -370,7 +370,7 @@ function Invoke-SignArtifact {
                     "/tr", $tsa
                     "/td", "sha256"
                     "/fd", "sha256"
-                ) + $storeParam + @($Path)
+                ) + $storeParam + @("`"$Path`"")
                 
                 $psi = New-Object System.Diagnostics.ProcessStartInfo
                 $psi.FileName = $signToolExe
@@ -594,9 +594,170 @@ function Build-AllBinaries {
         
         # Clean up PDB files
         Get-ChildItem -Path $outputPath -Filter "*.pdb" | Remove-Item -Force
+
+        # Build the GUI, Managed State Keeper.exe, into its own folder; the packages copy
+        # it in beside the CLI and the service.
+        Build-GuiApp -Arch $arch -RuntimeIdentifier $runtime -OutputPath (Join-Path $outputPath 'gui') -Version $Version
     }
-    
+
     Write-BuildLog "All binaries built successfully" -Level 'SUCCESS'
+}
+
+# The GUI's executable, as installed in C:\Program Files\StartSet beside managedstatekeeper.exe.
+$script:GuiExecutableName = 'Managed State Keeper.exe'
+
+function Build-GuiApp {
+    param(
+        [string]$Arch,
+        [string]$RuntimeIdentifier,
+        [string]$OutputPath,
+        [hashtable]$Version
+    )
+
+    $config = if ($Dev) { 'Debug' } else { $Configuration }
+    $appProject = Join-Path $SrcDir 'App\StartSet.App.csproj'
+
+    if (Test-Path $OutputPath) {
+        Remove-Item $OutputPath -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+
+    # A WinUI app is published as a folder, not a single file.
+    $publishArgs = @(
+        'publish',
+        $appProject,
+        '--configuration', $config,
+        '--runtime', $RuntimeIdentifier,
+        '--self-contained', 'true',
+        '--output', $OutputPath,
+        "-p:Version=$($Version.Full)",
+        '--verbosity', 'minimal'
+    )
+
+    Write-BuildLog "Publishing Managed State Keeper for $RuntimeIdentifier..."
+    & dotnet @publishArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to publish Managed State Keeper for $RuntimeIdentifier"
+    }
+
+    if (-not (Test-Path (Join-Path $OutputPath $GuiExecutableName))) {
+        throw "Expected $GuiExecutableName in $OutputPath"
+    }
+
+    if (-not (Publish-AppResources -Arch $Arch -OutputDir (Resolve-Path $OutputPath).Path -AppProjectDir (Join-Path $SrcDir 'App') -Config $config)) {
+        throw "Could not generate resources.pri for Managed State Keeper ($Arch); the app cannot load its XAML without it"
+    }
+
+    Get-ChildItem -Path $OutputPath -Filter "*.pdb" -Recurse | Remove-Item -Force
+    Write-BuildLog "Managed State Keeper ($RuntimeIdentifier) built successfully" -Level 'SUCCESS'
+}
+
+# Generates resources.pri and copies the compiled XAML (.xbf) into the publish output.
+#
+# EnableCoreMrtTooling is off in StartSet.App.csproj because the MSBuild PRI step needs
+# the Visual Studio UWP workload, which the build machines do not have. This does what
+# that step would: stage the .xbf files with the WinUI framework .pri files and merge
+# them into one resources.pri with makepri.exe from the Windows SDK. Same procedure as
+# the BootstrapMate GUI.
+function Publish-AppResources {
+    param(
+        [Parameter(Mandatory)][string]$Arch,
+        [Parameter(Mandatory)][string]$OutputDir,
+        [Parameter(Mandatory)][string]$AppProjectDir,
+        [Parameter(Mandatory)][string]$Config
+    )
+
+    Write-BuildLog "Generating XAML resources (XBF + resources.pri) for Managed State Keeper ($Arch)..."
+
+    # makepri.exe runs on the build host, so prefer the host architecture's copy.
+    $hostArch = switch ($env:PROCESSOR_ARCHITECTURE) {
+        'AMD64' { 'x64' }
+        'ARM64' { 'arm64' }
+        default { 'x86' }
+    }
+    $toolArchOrder = @($hostArch) + (@('x64', 'arm64', 'x86') | Where-Object { $_ -ne $hostArch })
+    $sdkBinRoots = @(
+        "$env:ProgramFiles\Windows Kits\10\bin",
+        "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+    ) | Where-Object { Test-Path $_ }
+
+    $makepri = $null
+    foreach ($root in $sdkBinRoots) {
+        foreach ($toolArch in $toolArchOrder) {
+            $candidate = Get-ChildItem "$root\*\$toolArch\makepri.exe" -ErrorAction SilentlyContinue |
+                Sort-Object { [version]($_.FullName -replace '.*\\(\d+\.\d+\.\d+\.\d+)\\.*', '$1') } -Descending |
+                Select-Object -First 1
+            if ($candidate) { $makepri = $candidate.FullName; break }
+        }
+        if ($makepri) { break }
+    }
+
+    if (-not $makepri) {
+        Write-BuildLog "makepri.exe not found; install the Windows 10/11 SDK" "ERROR"
+        return $false
+    }
+
+    $xbfFiles = Get-ChildItem "$AppProjectDir\obj\$Config" -Recurse -Filter "*.xbf" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match [regex]::Escape("\win-$Arch\") }
+    if (-not $xbfFiles) {
+        Write-BuildLog "No .xbf files under obj\$Config for win-$Arch" "ERROR"
+        return $false
+    }
+
+    $xbfRootPath = ($xbfFiles[0].FullName -split [regex]::Escape("\win-$Arch\"))[0] + "\win-$Arch"
+    $stagingDir = Join-Path ([System.IO.Path]::GetTempPath()) "startset-pri-$Arch"
+    if (Test-Path $stagingDir) { Remove-Item $stagingDir -Recurse -Force }
+    New-Item -ItemType Directory $stagingDir | Out-Null
+
+    # resources.pri maps resources by relative path (App.xbf, Views\RunPage.xbf), resolved
+    # beside the executable at run time, so each .xbf goes to staging and to the output.
+    foreach ($xbf in $xbfFiles) {
+        $relativePath = $xbf.FullName.Substring($xbfRootPath.Length).TrimStart('\')
+        foreach ($destRoot in @($stagingDir, $OutputDir)) {
+            $dest = Join-Path $destRoot $relativePath
+            $destDir = Split-Path $dest
+            if (-not (Test-Path $destDir)) { New-Item -ItemType Directory $destDir | Out-Null }
+            Copy-Item $xbf.FullName $dest -Force
+        }
+    }
+
+    # The framework .pri files carry the WinUI theme resources; makepri merges them in.
+    $frameworkPris = Get-ChildItem $OutputDir -Filter "Microsoft.*.pri"
+    foreach ($pri in $frameworkPris) {
+        Copy-Item $pri.FullName (Join-Path $stagingDir $pri.Name) -Force
+    }
+
+    $priconfigPath = Join-Path $stagingDir "priconfig.xml"
+    & $makepri createconfig /cf $priconfigPath /dq "en-US" /pv "10.0.0" /o 2>&1 | Out-Null
+
+    $outPriPath = Join-Path $OutputDir "resources.pri"
+    $priOutput = & $makepri new /pr $stagingDir /cf $priconfigPath /in "StartSet" /of $outPriPath /o 2>&1
+    $priExit = $LASTEXITCODE
+    Remove-Item $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    if ($priExit -ne 0) {
+        Write-BuildLog "makepri.exe failed (exit $priExit): $priOutput" "ERROR"
+        return $false
+    }
+
+    Write-BuildLog "Generated resources.pri: $($xbfFiles.Count) XBF + $($frameworkPris.Count) framework PRI(s)" "SUCCESS"
+    return $true
+}
+
+# Copies the published GUI folder into a package payload, beside the CLI and service.
+function Copy-GuiPayload {
+    param(
+        [string]$BinDir,
+        [string]$PayloadDir
+    )
+
+    $guiDir = Join-Path $BinDir 'gui'
+    if (-not (Test-Path (Join-Path $guiDir $GuiExecutableName))) {
+        throw "Managed State Keeper is missing from $guiDir; build the binaries first"
+    }
+
+    Copy-Item -Path (Join-Path $guiDir '*') -Destination $PayloadDir -Recurse -Force
+    Write-BuildLog "Copied Managed State Keeper to payload" "INFO"
 }
 
 #endregion
@@ -621,8 +782,10 @@ function Invoke-SignAllBinaries {
     
     foreach ($arch in $archs) {
         $archDir = Join-Path $OutputDir $arch
-        $exeFiles = Get-ChildItem -Path $archDir -Filter "*.exe" -File -ErrorAction SilentlyContinue
-        
+        $exeFiles = @(Get-ChildItem -Path $archDir -Filter "*.exe" -File -ErrorAction SilentlyContinue)
+        $guiExe = Join-Path $archDir "gui\$GuiExecutableName"
+        if (Test-Path $guiExe) { $exeFiles += Get-Item $guiExe }
+
         foreach ($exe in $exeFiles) {
             try {
                 Invoke-SignArtifact -Path $exe.FullName -Thumbprint $Thumbprint -Store $CertStore
@@ -690,6 +853,8 @@ function Build-MsiPackage {
             Write-BuildLog "Binary not found: $sourcePath" "WARNING"
         }
     }
+
+    Copy-GuiPayload -BinDir $binDir -PayloadDir $payloadDir
 
     # Create scripts directory with pre/postinstall
     $scriptsDir = Join-Path $msiTempDir "scripts"
@@ -898,7 +1063,9 @@ function Build-PkgPackage {
             Write-BuildLog "Binary not found: $sourcePath" "WARNING"
         }
     }
-    
+
+    Copy-GuiPayload -BinDir $binDir -PayloadDir $payloadDir
+
     # Create scripts directory and copy pre/postinstall scripts
     $scriptsDir = Join-Path $pkgTempDir "scripts"
     New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
