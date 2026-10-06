@@ -92,8 +92,8 @@ public class FileTrustTests : IDisposable
         var file = _temp.CreateFile(@"login-every\setup.ps1", "Write-Output hi");
         Lock(_temp.Path);
 
-        // The test account owns the file and is not an administrator SID; that no longer matters.
-        FileTrust.IsAdministrativeSid(FileTrust.OwnerOf(file)).Should().BeFalse();
+        // Unelevated, the test account owns the file; elevated (as in CI) Administrators
+        // does. Either way the owner is not part of the decision.
         FileTrust.CheckFile(file, _temp.Path, normalizeOwner: false).IsTrusted.Should().BeTrue();
     }
 
