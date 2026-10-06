@@ -18,6 +18,10 @@ public sealed partial class PrefsPage : Page
     public PrefsPage()
     {
         InitializeComponent();
+
+        var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "StartSet.png");
+        if (System.IO.File.Exists(iconPath))
+            AppIcon.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(iconPath));
         ViewModel.SaveReported += (message, failed) => DispatcherQueue.TryEnqueue(() =>
         {
             SaveStatus.Text = message;

@@ -13,6 +13,8 @@
     <Product>Managed State Keeper</Product>
     <Description>Managed State Keeper</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Placeholder icon until StartSet has artwork of its own. -->
+    <ApplicationIcon>Assets\StartSet.ico</ApplicationIcon>
     <!-- Directory.Build.props publishes the CLI and service as single compressed files;
          a WinUI app is published as a folder. -->
     <PublishSingleFile>false</PublishSingleFile>
@@ -32,6 +34,11 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.250401001" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\StartSet.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\StartSet.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

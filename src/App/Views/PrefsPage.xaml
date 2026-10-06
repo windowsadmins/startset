@@ -9,8 +9,7 @@
 
             <!-- ═══ App Info Header ═══ -->
             <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="0,8,0,4">
-                <FontIcon Glyph="&#xE7B8;" FontSize="48" HorizontalAlignment="Center"
-                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                <Image x:Name="AppIcon" Width="64" Height="64" HorizontalAlignment="Center" />
 
                 <TextBlock Text="Managed State Keeper"
                            Style="{StaticResource TitleTextBlockStyle}"

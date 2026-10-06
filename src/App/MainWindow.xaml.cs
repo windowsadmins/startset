@@ -33,6 +33,8 @@ public sealed partial class MainWindow : Window
             Math.Min(targetW, maxW),
             Math.Min(targetH, maxH)));
 
+        AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "StartSet.ico"));
+
         // Extend content into title bar for seamless theme-matching appearance
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
