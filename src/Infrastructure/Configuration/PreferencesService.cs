@@ -34,7 +34,8 @@ public class PreferencesService
 
     /// <summary>Reads the real policy and machine settings keys and checks Config.yaml's ACL.</summary>
     public PreferencesService()
-        : this(RegistrySettingsStore.Policy(), RegistrySettingsStore.Machine(), FileTrust.CheckFile)
+        : this(RegistrySettingsStore.Policy(), RegistrySettingsStore.Machine(),
+               path => FileTrust.CheckFile(path, Paths.ScriptRoot, normalizeOwner: FileTrust.IsRunningAsSystem()))
     {
     }
 

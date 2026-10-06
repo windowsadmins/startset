@@ -155,11 +155,17 @@ Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\StartSet' -Name NetworkTimeout -
 
 The service runs as SYSTEM and executes what is under `C:\ProgramData\ManagedState`, so the installer makes that folder writable only by Administrators and SYSTEM (Users can read it), with inheritance from ProgramData turned off. The service applies the same ACL each time it starts.
 
-A payload, or `Config.yaml`, that a non-administrator could write is not used: it is skipped and the run log says why. That covers a file owned by anyone other than SYSTEM, Administrators or TrustedInstaller, a file or folder with an entry that lets a standard user change it, and a link. A payload copied in by an account whose own SID owns the file (rather than the Administrators group) is skipped for the same reason; give it to Administrators to run it:
+Once the folder is locked, only an administrator can create a file in it, so a file there counts as written by an administrator whichever account owns it. A payload or `Config.yaml` is used when:
 
-```powershell
-icacls 'C:\ProgramData\ManagedState\login-every\setup.ps1' /setowner '*S-1-5-32-544'
-```
+- every folder from the file up to `C:\ProgramData\ManagedState` is locked, so only SYSTEM, Administrators or TrustedInstaller can create, delete or change permissions there;
+- no one else has write, delete, change-permissions or take-ownership rights on the file itself;
+- and it is not a link.
+
+Otherwise it is skipped, and the run log says why.
+
+An owner always holds the right to change a file's permissions, so the service gives any file owned by an individual account to the Administrators group.
+
+The first time the service locks a folder that was open before, any file in it whose owner is not an administrator could have come from a standard user. The service moves each such file to `C:\ProgramData\ManagedState\quarantine\<timestamp>\` and logs it; nothing is deleted. After that first lock, files are only given to Administrators.
 
 ## Trigger Files
 
@@ -171,7 +177,7 @@ Create one of these files to run payloads now. The service watches `C:\ProgramDa
 - `.startset.login-privileged` - Runs the login-privileged scripts now, as SYSTEM
 - `.startset.cleanup` - Triggers cleanup of trigger files
 
-Anyone may create the first two. The others run payloads as SYSTEM, so they are honoured only when an administrator created the file; one a standard user created is deleted and logged.
+The first two are honoured in either folder. The others run payloads as SYSTEM, so they are honoured only in the data root, which only administrators can write. One left in `triggers` is deleted and logged.
 
 ```powershell
 New-Item -ItemType File 'C:\ProgramData\ManagedState\triggers\.startset.ondemand'

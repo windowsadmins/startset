@@ -80,7 +80,7 @@ public class TriggerWatcherWorker : BackgroundService
     /// </summary>
     private static bool Admit(string path)
     {
-        var decision = TriggerFiles.Evaluate(path, FileTrust.OwnerOf(path));
+        var decision = TriggerFiles.Evaluate(path);
         if (decision.IsTrusted)
             return true;
 

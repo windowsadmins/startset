@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using FluentAssertions;
@@ -9,8 +10,9 @@ using StartSet.Tests.Helpers;
 namespace StartSet.Tests.Infrastructure;
 
 /// <summary>
-/// The ACL check: a file, or the folder holding it, that a non-administrator could write
-/// is not trusted.
+/// The trust rule: a file is trusted when its folder chain up to the data root is locked
+/// and nobody but SYSTEM, Administrators or TrustedInstaller can write the file. The owner
+/// SID is not part of it.
 /// </summary>
 public class FileTrustTests : IDisposable
 {
@@ -20,11 +22,15 @@ public class FileTrustTests : IDisposable
     private const int GenericWrite = 0x40000000;
     private const string AuthenticatedUsers = "S-1-5-11";
     private const string SomeUser = "S-1-5-21-1111111111-2222222222-3333333333-1001";
-    private const string BuiltInAdministrator = "S-1-5-21-1111111111-2222222222-3333333333-500";
+    private const string BuiltInAdministratorAccount = "S-1-5-21-1111111111-2222222222-3333333333-500";
 
     private readonly TempDirectory _temp = new();
 
-    public void Dispose() => _temp.Dispose();
+    public void Dispose()
+    {
+        Unlock(_temp.Path);
+        _temp.Dispose();
+    }
 
     private static AccessEntry[] LockedAcl =>
     [
@@ -33,29 +39,12 @@ public class FileTrustTests : IDisposable
         new(FileTrust.UsersSid, ReadAndExecute, Allow: true)
     ];
 
-    [Theory]
-    [InlineData(FileTrust.SystemSid)]
-    [InlineData(FileTrust.AdministratorsSid)]
-    [InlineData(FileTrust.TrustedInstallerSid)]
-    [InlineData(BuiltInAdministrator)]
-    public void LockedAcl_WithAdministrativeOwner_IsTrusted(string owner)
-    {
-        FileTrust.Evaluate(owner, LockedAcl, "f").IsTrusted.Should().BeTrue();
-    }
+    // ── The pure decision ───────────────────────────────────────
 
     [Fact]
-    public void NonAdministratorOwner_IsNotTrusted()
+    public void LockedAcl_HasNoNonAdminWriter()
     {
-        var result = FileTrust.Evaluate(SomeUser, LockedAcl, "f");
-
-        result.IsTrusted.Should().BeFalse();
-        result.Reason.Should().Contain(SomeUser);
-    }
-
-    [Fact]
-    public void UnknownOwner_IsNotTrusted()
-    {
-        FileTrust.Evaluate(null, LockedAcl, "f").IsTrusted.Should().BeFalse();
+        FileTrust.FindNonAdminWriter(LockedAcl).Should().BeNull();
     }
 
     [Theory]
@@ -63,34 +52,26 @@ public class FileTrustTests : IDisposable
     [InlineData(AuthenticatedUsers, GenericWrite)]
     [InlineData(SomeUser, FullControl)]
     [InlineData(SomeUser, 0x10000)]  // delete
-    [InlineData(SomeUser, 0x40000)]  // write DAC
-    [InlineData(SomeUser, 0x80000)]  // write owner
+    [InlineData(SomeUser, 0x40000)]  // WRITE_DAC
+    [InlineData(SomeUser, 0x80000)]  // WRITE_OWNER
     [InlineData(SomeUser, 0x40)]     // delete child
     [InlineData(SomeUser, 0x4)]      // append / add subfolder
-    public void WriteRightForANonAdministrator_IsNotTrusted(string sid, int rights)
+    [InlineData(BuiltInAdministratorAccount, WriteData)]  // only the three principals count
+    public void WriteRightForAnyoneElse_IsFound(string sid, int rights)
     {
-        var acl = LockedAcl.Append(new AccessEntry(sid, rights, Allow: true));
-
-        var result = FileTrust.Evaluate(FileTrust.SystemSid, acl, "f");
-
-        result.IsTrusted.Should().BeFalse();
-        result.Reason.Should().Contain(sid);
+        FileTrust.FindNonAdminWriter(LockedAcl.Append(new AccessEntry(sid, rights, Allow: true))).Should().Be(sid);
     }
 
     [Fact]
-    public void ReadOnlyEntriesForUsers_AreTrusted()
+    public void ReadOnlyEntries_AreNotWriters()
     {
-        var acl = LockedAcl.Append(new AccessEntry(SomeUser, ReadAndExecute, Allow: true));
-
-        FileTrust.Evaluate(FileTrust.SystemSid, acl, "f").IsTrusted.Should().BeTrue();
+        FileTrust.FindNonAdminWriter(LockedAcl.Append(new AccessEntry(SomeUser, ReadAndExecute, Allow: true))).Should().BeNull();
     }
 
     [Fact]
     public void InheritOnlyEntries_DoNotApplyToTheObject()
     {
-        var acl = LockedAcl.Append(new AccessEntry("S-1-3-0", FullControl, Allow: true, InheritOnly: true));
-
-        FileTrust.Evaluate(FileTrust.SystemSid, acl, "f").IsTrusted.Should().BeTrue();
+        FileTrust.FindNonAdminWriter(LockedAcl.Append(new AccessEntry("S-1-3-0", FullControl, Allow: true, InheritOnly: true))).Should().BeNull();
     }
 
     [Fact]
@@ -100,40 +81,70 @@ public class FileTrustTests : IDisposable
             .Append(new AccessEntry(FileTrust.UsersSid, WriteData, Allow: true))
             .Append(new AccessEntry(FileTrust.UsersSid, WriteData, Allow: false));
 
-        FileTrust.Evaluate(FileTrust.SystemSid, acl, "f").IsTrusted.Should().BeFalse();
+        FileTrust.FindNonAdminWriter(acl).Should().Be(FileTrust.UsersSid);
+    }
+
+    // ── Real files and folders ──────────────────────────────────
+
+    [Fact]
+    public void FileInALockedChain_IsTrusted_WhoeverOwnsIt()
+    {
+        var file = _temp.CreateFile(@"login-every\setup.ps1", "Write-Output hi");
+        Lock(_temp.Path);
+
+        // The test account owns the file and is not an administrator SID; that no longer matters.
+        FileTrust.IsAdministrativeSid(FileTrust.OwnerOf(file)).Should().BeFalse();
+        FileTrust.CheckFile(file, _temp.Path, normalizeOwner: false).IsTrusted.Should().BeTrue();
     }
 
     [Fact]
-    public void RealFile_WritableByUsers_IsNotTrusted()
+    public void UnlockedRoot_IsNotTrusted()
     {
-        var path = _temp.CreateFile("payload.ps1", "Write-Output hi");
-        var file = new FileInfo(path);
-        var security = file.GetAccessControl();
+        var file = _temp.CreateFile(@"login-every\setup.ps1", "Write-Output hi");
+
+        var result = FileTrust.CheckFile(file, _temp.Path, normalizeOwner: false);
+
+        result.IsTrusted.Should().BeFalse();
+        result.Reason.Should().Contain("is not locked");
+    }
+
+    [Fact]
+    public void UnlockedPayloadFolder_IsNotTrusted()
+    {
+        var file = _temp.CreateFile(@"login-every\setup.ps1", "Write-Output hi");
+        Lock(_temp.Path);
+        Grant(Path.Combine(_temp.Path, "login-every"), WellKnownSidType.BuiltinUsersSid, FileSystemRights.CreateFiles);
+
+        var result = FileTrust.CheckFile(file, _temp.Path, normalizeOwner: false);
+
+        result.IsTrusted.Should().BeFalse();
+        result.Reason.Should().Contain("login-every").And.Contain(FileTrust.UsersSid);
+    }
+
+    [Fact]
+    public void FileWritableByUsers_IsNotTrusted_EvenInALockedChain()
+    {
+        var file = _temp.CreateFile(@"login-every\setup.ps1", "Write-Output hi");
+        Lock(_temp.Path);
+        var info = new FileInfo(file);
+        var security = info.GetAccessControl();
         security.AddAccessRule(new FileSystemAccessRule(
-            new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
-            FileSystemRights.Write, AccessControlType.Allow));
-        file.SetAccessControl(security);
+            new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null), FileSystemRights.Write, AccessControlType.Allow));
+        info.SetAccessControl(security);
 
-        FileTrust.CheckFile(path).IsTrusted.Should().BeFalse();
-    }
+        var result = FileTrust.CheckFile(file, _temp.Path, normalizeOwner: false);
 
-    [Fact]
-    public void RealFile_OwnedByTheTestUser_IsNotTrusted_UnlessElevated()
-    {
-        var path = _temp.CreateFile("payload.ps1", "Write-Output hi");
-        var owner = FileTrust.OwnerOf(path);
-
-        var result = FileTrust.CheckFile(path);
-
-        if (!FileTrust.IsAdministrativeSid(owner))
-            result.IsTrusted.Should().BeFalse();
+        result.IsTrusted.Should().BeFalse();
+        result.Reason.Should().Contain("is writable by");
     }
 
     [Fact]
     public void MissingFile_IsNotTrusted()
     {
-        FileTrust.CheckFile(Path.Combine(_temp.Path, "nope.ps1")).IsTrusted.Should().BeFalse();
+        FileTrust.CheckFile(Path.Combine(_temp.Path, "nope.ps1"), _temp.Path, normalizeOwner: false).IsTrusted.Should().BeFalse();
     }
+
+    // ── The guard ───────────────────────────────────────────────
 
     [Fact]
     public void GuardAcl_MatchesTheInstallerSddl()
@@ -151,6 +162,55 @@ public class FileTrustTests : IDisposable
     }
 
     [Fact]
+    public void FirstLock_QuarantinesFilesFromUnresolvedOwners_AndLocksTheTree()
+    {
+        _temp.CreateFile(@"login-every\from-a-user.ps1", "x");
+        _temp.CreateFile("Config.yaml", "verbose: true");
+        _temp.CreateFile(@"logs\2026-10-06\0900-boot\startset.log", "kept");
+
+        var notes = DataDirectoryGuard.Secure(_temp.Path, isAdministrator: _ => false);
+
+        var quarantine = Path.Combine(_temp.Path, DataDirectoryGuard.QuarantineFolderName);
+        File.Exists(Path.Combine(_temp.Path, "login-every", "from-a-user.ps1")).Should().BeFalse();
+        File.Exists(Path.Combine(_temp.Path, "Config.yaml")).Should().BeFalse();
+        Directory.GetFiles(quarantine, "*", SearchOption.AllDirectories).Select(Path.GetFileName)
+            .Should().BeEquivalentTo("from-a-user.ps1", "Config.yaml");
+        notes.Should().Contain(n => n.StartsWith("Quarantined " + Path.Combine("login-every", "from-a-user.ps1")));
+
+        // Logs are StartSet's own output and are never quarantined.
+        File.Exists(Path.Combine(_temp.Path, @"logs\2026-10-06\0900-boot\startset.log")).Should().BeTrue();
+
+        FileTrust.IsLocked(new DirectoryInfo(_temp.Path)).Should().BeTrue();
+        FileTrust.IsLocked(new DirectoryInfo(Path.Combine(_temp.Path, "login-every"))).Should().BeTrue();
+    }
+
+    [Fact]
+    public void FirstLock_KeepsFilesWhoseOwnerResolvesToAnAdministrator()
+    {
+        var file = _temp.CreateFile(@"login-every\from-an-admin.ps1", "x");
+
+        DataDirectoryGuard.Secure(_temp.Path, isAdministrator: _ => true);
+
+        File.Exists(file).Should().BeTrue();
+    }
+
+    [Fact]
+    public void LaterLocks_DoNotQuarantine()
+    {
+        var file = _temp.CreateFile(@"login-every\setup.ps1", "x");
+        DataDirectoryGuard.Secure(_temp.Path, isAdministrator: _ => true);
+
+        // The folder is locked now, so a file in it was written by an administrator.
+        var notes = DataDirectoryGuard.Secure(_temp.Path, isAdministrator: _ => false);
+
+        File.Exists(file).Should().BeTrue();
+        notes.Should().NotContain(n => n.StartsWith("Quarantined"));
+        FileTrust.CheckFile(file, _temp.Path, normalizeOwner: false).IsTrusted.Should().BeTrue();
+    }
+
+    // ── The engine ──────────────────────────────────────────────
+
+    [Fact]
     public async Task Engine_SkipsAPayloadANonAdministratorCouldWrite()
     {
         var dir = Path.Combine(_temp.Path, "on-demand");
@@ -164,6 +224,41 @@ public class FileTrustTests : IDisposable
 
         File.Exists(marker).Should().BeFalse();
         results.Should().ContainSingle().Which.Status.Should().Be(ExecutionStatus.Skipped);
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// SYSTEM and Administrators full control, Users read, not inherited -- the installed
+    /// root ACL. The test account stays owner, so it can still undo this.
+    /// </summary>
+    private static void Lock(string root)
+    {
+        new DirectoryInfo(root).SetAccessControl(DataDirectoryGuard.Locked(allowUserTriggers: false, [], withOwner: false));
+    }
+
+    private static void Grant(string folder, WellKnownSidType sid, FileSystemRights rights)
+    {
+        var info = new DirectoryInfo(folder);
+        var security = info.GetAccessControl();
+        security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(sid, null), rights, AccessControlType.Allow));
+        info.SetAccessControl(security);
+    }
+
+    /// <summary>Gives the test account full control again so the temp tree can be deleted.</summary>
+    private static void Unlock(string root)
+    {
+        if (!Directory.Exists(root)) return;
+        using var me = WindowsIdentity.GetCurrent();
+        using var icacls = Process.Start(new ProcessStartInfo("icacls.exe")
+        {
+            ArgumentList = { root, "/grant", $"*{me.User!.Value}:(OI)(CI)F", "/T", "/C", "/Q" },
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        })!;
+        icacls.WaitForExit();
     }
 
     /// <summary>
@@ -184,24 +279,23 @@ public class FileTrustTests : IDisposable
 
 public class TriggerFilesTests
 {
-    private const string SomeUser = "S-1-5-21-1111111111-2222222222-3333333333-1001";
-
     [Theory]
     [InlineData(@"C:\ProgramData\ManagedState\triggers\.startset.ondemand")]
     [InlineData(@"C:\ProgramData\ManagedState\triggers\.startset.login")]
-    public void UserContextTrigger_IsAcceptedFromAStandardUser(string path)
+    [InlineData(@"C:\ProgramData\ManagedState\.startset.ondemand")]
+    public void UserContextTrigger_IsHonouredInEitherFolder(string path)
     {
-        TriggerFiles.Evaluate(path, SomeUser).IsTrusted.Should().BeTrue();
+        TriggerFiles.Evaluate(path).IsTrusted.Should().BeTrue();
     }
 
     [Theory]
-    [InlineData(@"C:\ProgramData\ManagedState\triggers\.startset.ondemand-privileged")]
-    [InlineData(@"C:\ProgramData\ManagedState\triggers\.startset.login-privileged")]
-    [InlineData(@"C:\ProgramData\ManagedState\triggers\.startset.cleanup")]
-    public void PrivilegedTrigger_IsRefusedFromAStandardUser(string path)
+    [InlineData(".startset.ondemand-privileged")]
+    [InlineData(".startset.login-privileged")]
+    [InlineData(".startset.cleanup")]
+    public void PrivilegedTrigger_IsHonouredOnlyInTheLockedRoot(string name)
     {
-        TriggerFiles.Evaluate(path, SomeUser).IsTrusted.Should().BeFalse();
-        TriggerFiles.Evaluate(path, FileTrust.AdministratorsSid).IsTrusted.Should().BeTrue();
+        TriggerFiles.Evaluate(Path.Combine(@"C:\ProgramData\ManagedState\triggers", name)).IsTrusted.Should().BeFalse();
+        TriggerFiles.Evaluate(Path.Combine(@"C:\ProgramData\ManagedState", name)).IsTrusted.Should().BeTrue();
     }
 
     [Fact]

@@ -9,13 +9,21 @@ namespace StartSet.Infrastructure.Security;
 /// written by someone who is not an administrator.
 /// </summary>
 /// <remarks>
-/// The service runs as SYSTEM and executes payloads, and reads Config.yaml, straight
-/// from ProgramData. Anything there that a standard user could change is a way for that
-/// user to have SYSTEM -- or another user's session -- run what they wrote. So before a
-/// file is trusted three things are checked: it is not a link; its owner is SYSTEM,
-/// Administrators, TrustedInstaller or the built-in Administrator (an owner can always
-/// rewrite the ACL); and no allow entry on the file, or on the folder holding it, gives
-/// anyone else a right that changes content, replaces the file or rewrites its security.
+/// The rule, in full:
+///   1. A link is never trusted.
+///   2. Every folder from the file up to the data root must be locked: no allow entry
+///      gives anyone but SYSTEM, Administrators or TrustedInstaller a right to create,
+///      delete, rewrite the ACL of, or take ownership of anything in it. In a locked
+///      folder only an administrator can create a file, so a file there was written by
+///      an administrator -- whichever account's SID owns it.
+///   3. The file itself grants no such right to anyone else.
+/// The owner SID is not part of the decision. An owner does hold an implicit WRITE_DAC,
+/// so when this runs as SYSTEM it first gives an individually owned file to
+/// BUILTIN\Administrators; files left over from before the folder was locked are
+/// quarantined by <see cref="DataDirectoryGuard"/>, not judged here.
+///
+/// The decision itself is <see cref="FindNonAdminWriter"/>, a pure function, so the
+/// same rule can be copied to another tool with the folder walk around it.
 /// </remarks>
 [SupportedOSPlatform("windows")]
 public static class FileTrust
@@ -26,47 +34,48 @@ public static class FileTrust
     public const string TrustedInstallerSid = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
 
     /// <summary>
-    /// Rights that let the holder change what the file or folder holds, or who controls it:
-    /// write/add-file, append/add-subfolder, delete-child, delete, write-DAC, write-owner,
-    /// and the generic write and all bits.
+    /// Rights that let the holder change what a file or folder holds, or who controls it:
+    /// write data / add file, append / add subfolder, delete child, delete, WRITE_DAC,
+    /// WRITE_OWNER, and the generic write and all bits.
     /// </summary>
-    internal const int WriteMask =
+    public const int WriteMask =
         0x0002 | 0x0004 | 0x0040 | 0x10000 | 0x40000 | 0x80000 | 0x40000000 | 0x10000000;
 
-    /// <summary>SYSTEM, Administrators, TrustedInstaller, or a machine's built-in Administrator account.</summary>
+    /// <summary>SYSTEM, Administrators or TrustedInstaller: the only principals allowed to write.</summary>
     public static bool IsAdministrativeSid(string? sid) =>
-        sid is not null &&
-        (sid == SystemSid ||
-         sid == AdministratorsSid ||
-         sid == TrustedInstallerSid ||
-         (sid.StartsWith("S-1-5-21-", StringComparison.Ordinal) && sid.EndsWith("-500", StringComparison.Ordinal)));
+        sid is SystemSid or AdministratorsSid or TrustedInstallerSid;
 
     /// <summary>
-    /// The decision on its own, so it can be tested without real ACLs: trusted when the owner
-    /// is administrative and no entry that applies to the object grants a non-administrator a
-    /// write right. Deny entries are not credited -- an allow is treated as granted.
+    /// The first principal other than SYSTEM, Administrators or TrustedInstaller that an
+    /// entry applying to the object lets write, or null when there is none. Deny entries
+    /// are not credited: an allow is treated as granted.
     /// </summary>
-    public static TrustResult Evaluate(string? ownerSid, IEnumerable<AccessEntry> entries, string what)
+    public static string? FindNonAdminWriter(IEnumerable<AccessEntry> entries)
     {
-        if (!IsAdministrativeSid(ownerSid))
-            return TrustResult.Untrusted($"{what} is owned by {ownerSid ?? "an unknown owner"}, not by an administrator");
-
         foreach (var entry in entries)
         {
             if (!entry.Allow || entry.InheritOnly) continue;
             if ((entry.Rights & WriteMask) == 0) continue;
             if (IsAdministrativeSid(entry.Sid)) continue;
-            return TrustResult.Untrusted($"{what} is writable by {entry.Sid}");
+            return entry.Sid;
         }
-
-        return TrustResult.Trusted;
+        return null;
     }
 
+    /// <summary>True when only SYSTEM, Administrators and TrustedInstaller can write in <paramref name="folder"/>.</summary>
+    public static bool IsLocked(DirectoryInfo folder) =>
+        FindNonAdminWriter(EntriesOf(folder.GetAccessControl())) is null;
+
     /// <summary>
-    /// Checks <paramref name="path"/> and the folder that holds it. Anyone who can create or
-    /// delete entries in that folder can replace the file, so the folder counts too.
+    /// Checks <paramref name="path"/> against the rule above, walking its folders up to and
+    /// including <paramref name="root"/>. A file outside <paramref name="root"/> has only its
+    /// own folder checked.
     /// </summary>
-    public static TrustResult CheckFile(string path)
+    /// <param name="normalizeOwner">
+    /// Give an individually owned file to BUILTIN\Administrators first. Pass true when the
+    /// caller runs as SYSTEM.
+    /// </param>
+    public static TrustResult CheckFile(string path, string root, bool normalizeOwner)
     {
         try
         {
@@ -76,17 +85,21 @@ public static class FileTrust
             if (file.Attributes.HasFlag(FileAttributes.ReparsePoint))
                 return TrustResult.Untrusted($"{path} is a link, not a file");
 
-            var fileResult = Evaluate(file.GetAccessControl(), path);
-            if (!fileResult.IsTrusted)
-                return fileResult;
+            foreach (var folder in FoldersUpTo(file.Directory, root))
+            {
+                if (folder.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    return TrustResult.Untrusted($"{folder.FullName} is a link, not a folder");
+                if (FindNonAdminWriter(EntriesOf(folder.GetAccessControl())) is { } folderWriter)
+                    return TrustResult.Untrusted($"{folder.FullName} is not locked: {folderWriter} can write in it");
+            }
 
-            var folder = file.Directory;
-            if (folder is null)
-                return TrustResult.Trusted;
-            if (folder.Attributes.HasFlag(FileAttributes.ReparsePoint))
-                return TrustResult.Untrusted($"{folder.FullName} is a link, not a folder");
+            if (normalizeOwner)
+                NormalizeOwner(file);
 
-            return Evaluate(folder.GetAccessControl(), folder.FullName);
+            if (FindNonAdminWriter(EntriesOf(file.GetAccessControl())) is { } writer)
+                return TrustResult.Untrusted($"{path} is writable by {writer}");
+
+            return TrustResult.Trusted;
         }
         catch (Exception ex)
         {
@@ -94,12 +107,38 @@ public static class FileTrust
         }
     }
 
+    /// <summary>
+    /// Gives <paramref name="file"/> to BUILTIN\Administrators when an individual account owns
+    /// it, removing that account's implicit WRITE_DAC. Returns true when the owner changed.
+    /// </summary>
+    public static bool NormalizeOwner(FileSystemInfo file)
+    {
+        var current = OwnerOf(file.FullName);
+        if (IsAdministrativeSid(current))
+            return false;
+
+        var security = file is DirectoryInfo ? (FileSystemSecurity)new DirectorySecurity() : new FileSecurity();
+        security.SetOwner(new SecurityIdentifier(AdministratorsSid));
+        if (file is DirectoryInfo dir) dir.SetAccessControl((DirectorySecurity)security);
+        else ((FileInfo)file).SetAccessControl((FileSecurity)security);
+        return true;
+    }
+
+    /// <summary>True when this process is LocalSystem.</summary>
+    public static bool IsRunningAsSystem()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return identity.User?.Value == SystemSid;
+    }
+
     /// <summary>The owner of <paramref name="path"/>, or null when it cannot be read.</summary>
     public static string? OwnerOf(string path)
     {
         try
         {
-            var security = new FileInfo(path).GetAccessControl(AccessControlSections.Owner);
+            FileSystemSecurity security = Directory.Exists(path)
+                ? new DirectoryInfo(path).GetAccessControl(AccessControlSections.Owner)
+                : new FileInfo(path).GetAccessControl(AccessControlSections.Owner);
             return (security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier)?.Value;
         }
         catch
@@ -108,18 +147,36 @@ public static class FileTrust
         }
     }
 
-    private static TrustResult Evaluate(FileSystemSecurity security, string what)
+    /// <summary>The folder chain from <paramref name="start"/> up to and including <paramref name="root"/>.</summary>
+    private static IEnumerable<DirectoryInfo> FoldersUpTo(DirectoryInfo? start, string root)
     {
-        var owner = (security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier)?.Value;
-        var entries = security.GetAccessRules(true, true, typeof(SecurityIdentifier))
+        if (start is null) yield break;
+
+        var rootFull = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var underRoot = Path.TrimEndingDirectorySeparator(start.FullName)
+            .StartsWith(rootFull, StringComparison.OrdinalIgnoreCase);
+        if (!underRoot)
+        {
+            yield return start;
+            yield break;
+        }
+
+        for (var folder = start; folder is not null; folder = folder.Parent)
+        {
+            yield return folder;
+            if (string.Equals(Path.TrimEndingDirectorySeparator(folder.FullName), rootFull, StringComparison.OrdinalIgnoreCase))
+                yield break;
+        }
+    }
+
+    private static IEnumerable<AccessEntry> EntriesOf(FileSystemSecurity security) =>
+        security.GetAccessRules(true, true, typeof(SecurityIdentifier))
             .Cast<FileSystemAccessRule>()
             .Select(r => new AccessEntry(
                 r.IdentityReference.Value,
                 (int)r.FileSystemRights,
                 r.AccessControlType == AccessControlType.Allow,
                 r.PropagationFlags.HasFlag(PropagationFlags.InheritOnly)));
-        return Evaluate(owner, entries, what);
-    }
 }
 
 /// <summary>One access-control entry, reduced to what the trust decision needs.</summary>

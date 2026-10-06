@@ -43,8 +43,9 @@ public class ExecutionEngine
     /// </param>
     /// <param name="payloadTrust">
     /// Decides whether a payload file may run. Null -- the default -- is
-    /// <see cref="FileTrust.CheckFile"/>: a payload a non-administrator could
-    /// write is skipped. Tests whose payloads they wrote themselves pass their own.
+    /// <see cref="FileTrust.CheckFile"/> against the data root: a payload a
+    /// non-administrator could write is skipped. Tests whose payloads they wrote
+    /// themselves pass their own.
     /// </param>
     public ExecutionEngine(
         PreferencesService preferencesService,
@@ -54,7 +55,7 @@ public class ExecutionEngine
         _preferencesService = preferencesService;
         _payloadRoot = payloadRoot;
         _checksumService = new ChecksumService();
-        _payloadTrust = payloadTrust ?? FileTrust.CheckFile;
+        _payloadTrust = payloadTrust ?? DefaultPayloadTrust;
         _networkMonitor = new NetworkMonitor(_preferencesService.Preferences.NetworkTimeout);
 
         // Register all processors
@@ -66,6 +67,15 @@ public class ExecutionEngine
             new PackageProcessor()
         ];
     }
+
+    private static readonly bool RunningAsSystem = FileTrust.IsRunningAsSystem();
+
+    /// <summary>
+    /// The installed rule: the folder chain up to the data root must be locked, and as
+    /// SYSTEM an individually owned payload is first given to Administrators.
+    /// </summary>
+    private static TrustResult DefaultPayloadTrust(string path) =>
+        FileTrust.CheckFile(path, Paths.ScriptRoot, normalizeOwner: RunningAsSystem);
 
     /// <summary>
     /// Executes all scripts for the specified payload types.

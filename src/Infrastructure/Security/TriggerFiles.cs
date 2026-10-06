@@ -4,7 +4,7 @@ using StartSet.Core.Constants;
 namespace StartSet.Infrastructure.Security;
 
 /// <summary>
-/// Which trigger files the service acts on, and from whom.
+/// Which trigger files the service acts on, and from where.
 /// </summary>
 /// <remarks>
 /// A trigger file is read for its name only; its content is never used. It lives in
@@ -13,9 +13,10 @@ namespace StartSet.Infrastructure.Security;
 /// write access to anything StartSet executes.
 ///
 /// The user-context triggers (.startset.ondemand, .startset.login) run payloads in the
-/// signed-in user's own session, so anyone may ask for them. The privileged ones run
-/// payloads as SYSTEM and are honoured only from a file an administrator owns; one a
-/// standard user created is deleted and logged.
+/// signed-in user's own session, so they are honoured in either folder. The privileged
+/// ones run payloads as SYSTEM and are honoured only in ScriptRoot: a file there was
+/// written by an administrator, whichever account owns it. One in the triggers folder is
+/// deleted and logged.
 /// </remarks>
 [SupportedOSPlatform("windows")]
 public static class TriggerFiles
@@ -39,29 +40,28 @@ public static class TriggerFiles
     /// <summary>True when the trigger runs payloads as SYSTEM, or changes what the service does.</summary>
     public static bool IsPrivileged(string triggerPath) => !UserTriggers.Contains(Path.GetFileName(triggerPath));
 
-    /// <summary>
-    /// Whether the trigger at <paramref name="path"/> may be acted on, given its owner.
-    /// </summary>
-    public static TrustResult Evaluate(string path, string? ownerSid)
+    /// <summary>Whether the trigger at <paramref name="path"/> may be acted on, given where it is.</summary>
+    public static TrustResult Evaluate(string path)
     {
-        if (!IsPrivileged(path) || FileTrust.IsAdministrativeSid(ownerSid))
+        var folder = Path.GetDirectoryName(Path.GetFullPath(path));
+        var inUserFolder = string.Equals(folder, Path.GetFullPath(Paths.TriggerDirectory), StringComparison.OrdinalIgnoreCase);
+        if (!IsPrivileged(path) || !inUserFolder)
             return TrustResult.Trusted;
         return TrustResult.Untrusted(
-            $"{Path.GetFileName(path)} runs payloads as SYSTEM and was created by {ownerSid ?? "an unknown owner"}, not an administrator");
+            $"{Path.GetFileName(path)} runs payloads as SYSTEM and is honoured only in {Paths.ScriptRoot}, which only administrators can write; {Paths.TriggerDirectory} is open to every user");
     }
 
     /// <summary>
     /// Deletes every copy of the trigger and reports whether any was one the service may act
     /// on. Rejected copies are reported through <paramref name="rejected"/>.
     /// </summary>
-    public static bool Consume(string triggerPath, Action<string>? rejected = null, Func<string, string?>? ownerOf = null)
+    public static bool Consume(string triggerPath, Action<string>? rejected = null)
     {
-        ownerOf ??= FileTrust.OwnerOf;
         var accepted = false;
         foreach (var location in LocationsOf(triggerPath))
         {
             if (!File.Exists(location)) continue;
-            var decision = Evaluate(location, ownerOf(location));
+            var decision = Evaluate(location);
             if (decision.IsTrusted) accepted = true;
             else rejected?.Invoke(decision.Reason!);
             try { File.Delete(location); } catch { }
