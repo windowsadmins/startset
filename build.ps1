@@ -59,6 +59,10 @@
 .PARAMETER Architecture
     Target architecture (x64, arm64, or both). Default: both
 
+.PARAMETER BuildVersion
+    Version to stamp, as YYYY.MM.DD.HHMM. The release workflow passes the tag's version so
+    every file in a release carries exactly that version. Default: the current time.
+
 .PARAMETER Test
     Run tests after building
 
@@ -127,7 +131,9 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [ValidateSet('x64', 'arm64', 'both')]
-    [string]$Architecture = 'both'
+    [string]$Architecture = 'both',
+    [ValidatePattern('^\d{4}\.\d{2}\.\d{2}\.\d{4}$')]
+    [string]$BuildVersion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -406,7 +412,11 @@ function Invoke-SignArtifact {
 #region Version Functions
 
 function Get-BuildVersion {
-    $currentTime = Get-Date
+    $currentTime = if ($BuildVersion) {
+        [datetime]::ParseExact($BuildVersion, 'yyyy.MM.dd.HHmm', [Globalization.CultureInfo]::InvariantCulture)
+    } else {
+        Get-Date
+    }
     $fullVersion = $currentTime.ToString("yyyy.MM.dd.HHmm")
     $semanticVersion = "{0}.{1}.{2}.{3}" -f ($currentTime.Year - 2000), $currentTime.Month, $currentTime.Day, $currentTime.ToString("HHmm")
     
