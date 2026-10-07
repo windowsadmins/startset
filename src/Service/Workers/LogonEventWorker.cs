@@ -103,6 +103,17 @@ public class LogonEventWorker : BackgroundService
                 return;
 
             var fullUsername = string.IsNullOrEmpty(domain) ? username : $"{domain}\\{username}";
+
+            // Scheduled tasks, services and runas write interactive-type logons too.
+            // Only one that lands in a user's desktop session can be a sign-in.
+            var logonSessionId = GetLogonSessionDesktop(record);
+            var rejected = LoginGate.RejectBeforeWaiting(logonSessionId);
+            if (rejected != null)
+            {
+                StartSetLogger.Debug("Ignoring logon for {User} (LogonType: {Type}): {Reason}", fullUsername ?? "Unknown", logonType ?? "Unknown", rejected);
+                return;
+            }
+
             StartSetLogger.Information("Logon detected for user: {User} (LogonType: {Type})", fullUsername ?? "Unknown", logonType ?? "Unknown");
 
             // Tells the start-up catch-up that the watcher is delivering events and it
@@ -110,8 +121,8 @@ public class LogonEventWorker : BackgroundService
             // wait can take a minute, and the catch-up must not fire in the meantime.
             Volatile.Write(ref _observedLogon, 1);
 
-            var sessionId = GetSessionIdForLogon(record);
-            await RunLoginPayloadsAsync(username, sessionId, CancellationToken.None);
+            var sessionId = logonSessionId >= 0 ? logonSessionId : GetActiveConsoleSession();
+            await RunLoginPayloadsAsync(username, username, sessionId, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -129,7 +140,8 @@ public class LogonEventWorker : BackgroundService
     /// how the user was discovered, so one body means a fix to the batch cannot land on
     /// one path and miss the other.
     /// </remarks>
-    private async Task RunLoginPayloadsAsync(string? username, int sessionId, CancellationToken stoppingToken)
+    /// <param name="logonUser">The account the logon event names, or null for the catch-up.</param>
+    private async Task RunLoginPayloadsAsync(string? username, string? logonUser, int sessionId, CancellationToken stoppingToken)
     {
         try
         {
@@ -159,6 +171,16 @@ public class LogonEventWorker : BackgroundService
                 StartSetLogger.Warning(
                     "Could not determine the session for this logon, so the desktop readiness wait was skipped. " +
                     "Payloads may run before the shell is up.");
+            }
+
+            // Checked after the desktop wait: until then the session may not show who
+            // signed in to it yet.
+            var sessionUser = ShellReadiness.GetSessionUserName(sessionId);
+            var notASignIn = _loginGate.Claim(logonUser, sessionId, sessionUser, LogonSessions.GetSessionLogonTime(sessionId));
+            if (notASignIn != null)
+            {
+                StartSetLogger.Debug("Not running login payloads for {User}: {Reason}", logonUser ?? username ?? "Unknown", notASignIn);
+                return;
             }
 
             // Any additional configured delay is applied on top.
@@ -228,6 +250,7 @@ public class LogonEventWorker : BackgroundService
     }
 
     private int _observedLogon;
+    private readonly LoginGate _loginGate = new();
 
     /// <summary>
     /// Runs the login payloads for a user who was already signed in when the service
@@ -293,7 +316,7 @@ public class LogonEventWorker : BackgroundService
 
             Volatile.Write(ref _observedLogon, 1);
 
-            await RunLoginPayloadsAsync(username, sessionId, stoppingToken);
+            await RunLoginPayloadsAsync(username, null, sessionId, stoppingToken);
         }
         catch (OperationCanceledException)
         {
@@ -307,21 +330,29 @@ public class LogonEventWorker : BackgroundService
     }
 
     /// <summary>
-    /// Session the logon belongs to. Event 4624 does not carry a session id, but
-    /// TargetLogonId identifies the logon session, and that maps to the Terminal
-    /// Services session the shell will start in. Falls back to the active console
-    /// session, which is the right answer on these single-seat machines.
+    /// Desktop session the logon belongs to. Event 4624 does not carry a session id, but
+    /// TargetLogonId identifies the logon session, and LSA knows which session that is.
+    /// Returns <see cref="LogonSessions.NoSuchLogonSession"/> when the logon session has
+    /// already closed, or -1 when it could not be looked up.
     /// </summary>
-    private static int GetSessionIdForLogon(System.Diagnostics.Eventing.Reader.EventRecord record)
+    private static int GetLogonSessionDesktop(EventRecord record)
     {
-        try
-        {
-            var sessionValue = GetEventDataValue(record, "SessionId");
-            if (!string.IsNullOrWhiteSpace(sessionValue) && int.TryParse(sessionValue, out var parsed))
-                return parsed;
-        }
-        catch { }
+        var value = GetEventDataValue(record, "TargetLogonId");
+        if (string.IsNullOrWhiteSpace(value)) return -1;
 
+        var parsed = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? ulong.TryParse(value[2..], System.Globalization.NumberStyles.HexNumber, null, out var hex) ? hex : (ulong?)null
+            : ulong.TryParse(value, out var dec) ? dec : null;
+
+        return parsed is { } logonId ? LogonSessions.GetSessionIdOfLogon(logonId) : -1;
+    }
+
+    /// <summary>
+    /// The active console session, which is the right answer on these single-seat
+    /// machines when LSA could not say. -1 when nothing is attached.
+    /// </summary>
+    private static int GetActiveConsoleSession()
+    {
         try
         {
             var console = (int)WTSGetActiveConsoleSessionId();
@@ -348,6 +379,7 @@ public class LogonEventWorker : BackgroundService
             {
                 "TargetUserName" => properties.Count > 5 ? properties[5].Value?.ToString() : null,
                 "TargetDomainName" => properties.Count > 6 ? properties[6].Value?.ToString() : null,
+                "TargetLogonId" => properties.Count > 7 ? properties[7].Value?.ToString() : null,
                 "LogonType" => properties.Count > 8 ? properties[8].Value?.ToString() : null,
                 _ => null
             };
