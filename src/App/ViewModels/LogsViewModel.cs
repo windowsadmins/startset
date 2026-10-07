@@ -17,7 +17,7 @@ public partial class LogsViewModel : ObservableObject
     /// The installed log tree, or the folder given with --logs: a log tree copied from
     /// another machine can be read the same way.
     /// </summary>
-    private static readonly string LogDirectory = LogsArgument() ?? Paths.LogDirectory;
+    public static readonly string LogDirectory = LogsArgument() ?? Paths.LogDirectory;
 
     private static string? LogsArgument()
     {

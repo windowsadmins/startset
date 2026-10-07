@@ -80,6 +80,15 @@
             </ListView.ItemTemplate>
         </ListView>
 
+        <!-- ═══ Left: No-logs state ═══ -->
+        <StackPanel x:Name="NoLogsState" Grid.Row="2" Grid.Column="0"
+                    Padding="16,12" Spacing="4" Visibility="Collapsed">
+            <TextBlock Text="No logs yet" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock x:Name="NoLogsPath" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                       Style="{StaticResource CaptionTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+
         <!-- ═══ Splitter ═══ -->
         <Border Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Width="1"
                 Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
@@ -100,9 +109,9 @@
                         Spacing="8">
                 <FontIcon Glyph="&#xE7C3;" FontSize="48"
                           Foreground="{ThemeResource TextFillColorDisabledBrush}" />
-                <TextBlock Text="No Log Selected" Style="{StaticResource SubtitleTextBlockStyle}"
+                <TextBlock x:Name="EmptyTitle" Text="No Log Selected" Style="{StaticResource SubtitleTextBlockStyle}"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                <TextBlock Text="Select a log session from the sidebar to view its contents."
+                <TextBlock x:Name="EmptySubtitle" Text="Select a log session from the sidebar to view its contents."
                            Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
             </StackPanel>
         </Grid>
