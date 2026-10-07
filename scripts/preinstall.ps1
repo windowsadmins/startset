@@ -117,6 +117,14 @@ try {
         }
     }
 
+    # Close Managed State Keeper if anyone has it open: it runs from the install folder,
+    # and its files are being replaced. It holds no state, so closing it loses nothing.
+    $gui = Get-Process -Name "Managed State Keeper" -ErrorAction SilentlyContinue
+    if ($gui) {
+        Write-Host "  Closing Managed State Keeper ($($gui.Count) window(s))..."
+        $gui | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+
     Write-Host ""
     Write-Host "Pre-installation checks complete"
     Write-Host ""

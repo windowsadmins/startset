@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Managed State Keeper.exe: the StartSet GUI. Its code started as a copy of
+       bootstrapmate-windows src/BootstrapMate.App and is maintained here on its own. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <RootNamespace>StartSet.App</RootNamespace>
+    <AssemblyName>Managed State Keeper</AssemblyName>
+    <Product>Managed State Keeper</Product>
+    <Description>Managed State Keeper</Description>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Placeholder icon until StartSet has artwork of its own. -->
+    <ApplicationIcon>Assets\StartSet.ico</ApplicationIcon>
+    <!-- Directory.Build.props publishes the CLI and service as single compressed files;
+         a WinUI app is published as a folder. -->
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <SelfContained>true</SelfContained>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- PriGen needs the VS UWP workload, which the build machines do not have. build.ps1
+         generates resources.pri with makepri.exe from the Windows SDK instead. -->
+    <EnableCoreMrtTooling>false</EnableCoreMrtTooling>
+    <NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.250401001" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\StartSet.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\StartSet.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\StartSet.Core.csproj" />
+    <ProjectReference Include="..\Infrastructure\StartSet.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

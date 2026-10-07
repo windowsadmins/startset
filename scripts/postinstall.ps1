@@ -90,6 +90,21 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "icacls could not open $startsetDataDir\triggers to users (exit $LASTEXITCODE)" }
     Write-Host "  Writable by Administrators and SYSTEM only; users may create trigger files in triggers"
 
+    # Start Menu shortcut for the GUI, Managed State Keeper.exe, for every user.
+    $guiExecutable = Join-Path $installDir "Managed State Keeper.exe"
+    if (Test-Path -Path $guiExecutable) {
+        $shortcutPath = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) "Managed State Keeper.lnk"
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = $guiExecutable
+        $shortcut.WorkingDirectory = $installDir
+        $shortcut.Description = "View StartSet settings, run payloads and read run logs"
+        $shortcut.Save()
+        Write-Host "  Start Menu shortcut: $shortcutPath"
+    } else {
+        Write-Host "  Managed State Keeper.exe not in this package; no Start Menu shortcut"
+    }
+
     # Verify service executable exists
     $serviceExecutable = Join-Path $installDir "StartSetService.exe"
     if (-not (Test-Path -Path $serviceExecutable)) {

@@ -11,6 +11,8 @@ env:
   DOTNET_VERSION: '10.0.x'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   TZ: 'America/Vancouver'
+  # The highest version already deployed. A release below it would be seen as a downgrade.
+  MINIMUM_FILE_VERSION: '2026.9.11.725'
 
 jobs:
   release:
@@ -39,9 +41,26 @@ jobs:
           $version = $tag -replace '^v',''
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
+      # Every file is stamped with the tag's version. Deployment tools compare file versions
+      # with what is installed, so a release must never carry one lower than the fleet's.
       - name: Build binaries (unsigned)
         shell: pwsh
-        run: .\build.ps1 -NoSign -Binaries
+        run: .\build.ps1 -NoSign -Binaries -BuildVersion '${{ steps.version.outputs.version }}'
+
+      - name: Check file versions
+        shell: pwsh
+        run: |
+          $parts = '${{ steps.version.outputs.version }}'.Split('.') | ForEach-Object { [int]$_ }
+          $expected = [version]::new($parts[0], $parts[1], $parts[2], $parts[3])
+          $floor = [version]'${{ env.MINIMUM_FILE_VERSION }}'
+          if ($expected -lt $floor) { throw "Tag version $expected is below the fleet's $floor" }
+          foreach ($arch in @("x64", "arm64")) {
+            foreach ($exe in @("release/$arch/managedstatekeeper.exe", "release/$arch/StartSetService.exe", "release/$arch/gui/Managed State Keeper.exe")) {
+              $actual = [version](Get-Item -LiteralPath $exe).VersionInfo.FileVersion
+              if ($actual -ne $expected) { throw "$exe is $actual, expected $expected" }
+              "$exe $actual"
+            }
+          }
 
       - name: Collect release artifacts
         shell: pwsh
@@ -53,13 +72,26 @@ jobs:
           }
           Get-ChildItem release-out | Format-Table Name, Length
 
+      # startset-<arch>.zip is the install payload, laid out as build-info.yaml installs it
+      # into C:\Program Files\StartSet: the CLI and service, and beside them the whole
+      # Managed State Keeper publish output (its exe, resources.pri, the compiled XAML and
+      # the Windows App SDK runtime files and folders).
       - name: Prepare release zips
         shell: pwsh
         run: |
           foreach ($arch in @("x64", "arm64")) {
             $binDir = "release/$arch"
-            if (-not (Test-Path "$binDir/StartSetService.exe")) { throw "Binaries not found in $binDir" }
-            Compress-Archive -Path "$binDir/*.exe" -DestinationPath "release-out/startset-$arch.zip" -Force
+            $guiDir = "$binDir/gui"
+            foreach ($required in @("$binDir/managedstatekeeper.exe", "$binDir/StartSetService.exe", "$guiDir/Managed State Keeper.exe", "$guiDir/resources.pri")) {
+              if (-not (Test-Path -LiteralPath $required)) { throw "Missing from the build: $required" }
+            }
+            $stage = "zip-stage/$arch"
+            New-Item -ItemType Directory -Path $stage -Force | Out-Null
+            Copy-Item "$binDir/*.exe" $stage -Force
+            Copy-Item "$guiDir/*" $stage -Recurse -Force
+            Compress-Archive -Path "$stage/*" -DestinationPath "release-out/startset-$arch.zip" -Force
+            $count = (Get-ChildItem $stage -Recurse -File).Count
+            "startset-$arch.zip: $count files"
           }
 
       - name: Create GitHub Release

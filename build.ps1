@@ -59,6 +59,10 @@
 .PARAMETER Architecture
     Target architecture (x64, arm64, or both). Default: both
 
+.PARAMETER BuildVersion
+    Version to stamp, as YYYY.MM.DD.HHMM. The release workflow passes the tag's version so
+    every file in a release carries exactly that version. Default: the current time.
+
 .PARAMETER Test
     Run tests after building
 
@@ -127,7 +131,9 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [ValidateSet('x64', 'arm64', 'both')]
-    [string]$Architecture = 'both'
+    [string]$Architecture = 'both',
+    [ValidatePattern('^\d{4}\.\d{2}\.\d{2}\.\d{4}$')]
+    [string]$BuildVersion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -370,7 +376,7 @@ function Invoke-SignArtifact {
                     "/tr", $tsa
                     "/td", "sha256"
                     "/fd", "sha256"
-                ) + $storeParam + @($Path)
+                ) + $storeParam + @("`"$Path`"")
                 
                 $psi = New-Object System.Diagnostics.ProcessStartInfo
                 $psi.FileName = $signToolExe
@@ -401,48 +407,16 @@ function Invoke-SignArtifact {
     throw "Signing failed after $MaxAttempts attempts: $Path"
 }
 
-function Invoke-SignNuget {
-    param(
-        [Parameter(Mandatory)][string]$NupkgPath,
-        [string]$Thumbprint
-    )
-    
-    if (-not (Test-Path $NupkgPath)) {
-        throw "NuGet package '$NupkgPath' not found."
-    }
-    
-    if (-not $Thumbprint) {
-        $certInfo = Get-SigningCertThumbprint
-        $Thumbprint = if ($certInfo) { $certInfo.Thumbprint } else { $null }
-    }
-    
-    if (-not $Thumbprint) {
-        Write-BuildLog "No enterprise code-signing cert present - skipping NuGet signing." "WARNING"
-        return $false
-    }
-    
-    $tsa = 'http://timestamp.digicert.com'
-    
-    & nuget.exe sign $NupkgPath `
-        -CertificateStoreName My `
-        -CertificateSubjectName $Global:EnterpriseCertCN `
-        -Timestamper $tsa
-    
-    if ($LASTEXITCODE) {
-        Write-BuildLog "nuget sign failed ($LASTEXITCODE) for '$NupkgPath'" "WARNING"
-        return $false
-    }
-    
-    Write-BuildLog "NuGet package signed: $NupkgPath" "SUCCESS"
-    return $true
-}
-
 #endregion
 
 #region Version Functions
 
 function Get-BuildVersion {
-    $currentTime = Get-Date
+    $currentTime = if ($BuildVersion) {
+        [datetime]::ParseExact($BuildVersion, 'yyyy.MM.dd.HHmm', [Globalization.CultureInfo]::InvariantCulture)
+    } else {
+        Get-Date
+    }
     $fullVersion = $currentTime.ToString("yyyy.MM.dd.HHmm")
     $semanticVersion = "{0}.{1}.{2}.{3}" -f ($currentTime.Year - 2000), $currentTime.Month, $currentTime.Day, $currentTime.ToString("HHmm")
     
@@ -594,9 +568,170 @@ function Build-AllBinaries {
         
         # Clean up PDB files
         Get-ChildItem -Path $outputPath -Filter "*.pdb" | Remove-Item -Force
+
+        # Build the GUI, Managed State Keeper.exe, into its own folder; the packages copy
+        # it in beside the CLI and the service.
+        Build-GuiApp -Arch $arch -RuntimeIdentifier $runtime -OutputPath (Join-Path $outputPath 'gui') -Version $Version
     }
-    
+
     Write-BuildLog "All binaries built successfully" -Level 'SUCCESS'
+}
+
+# The GUI's executable, as installed in C:\Program Files\StartSet beside managedstatekeeper.exe.
+$script:GuiExecutableName = 'Managed State Keeper.exe'
+
+function Build-GuiApp {
+    param(
+        [string]$Arch,
+        [string]$RuntimeIdentifier,
+        [string]$OutputPath,
+        [hashtable]$Version
+    )
+
+    $config = if ($Dev) { 'Debug' } else { $Configuration }
+    $appProject = Join-Path $SrcDir 'App\StartSet.App.csproj'
+
+    if (Test-Path $OutputPath) {
+        Remove-Item $OutputPath -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+
+    # A WinUI app is published as a folder, not a single file.
+    $publishArgs = @(
+        'publish',
+        $appProject,
+        '--configuration', $config,
+        '--runtime', $RuntimeIdentifier,
+        '--self-contained', 'true',
+        '--output', $OutputPath,
+        "-p:Version=$($Version.Full)",
+        '--verbosity', 'minimal'
+    )
+
+    Write-BuildLog "Publishing Managed State Keeper for $RuntimeIdentifier..."
+    & dotnet @publishArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to publish Managed State Keeper for $RuntimeIdentifier"
+    }
+
+    if (-not (Test-Path (Join-Path $OutputPath $GuiExecutableName))) {
+        throw "Expected $GuiExecutableName in $OutputPath"
+    }
+
+    if (-not (Publish-AppResources -Arch $Arch -OutputDir (Resolve-Path $OutputPath).Path -AppProjectDir (Join-Path $SrcDir 'App') -Config $config)) {
+        throw "Could not generate resources.pri for Managed State Keeper ($Arch); the app cannot load its XAML without it"
+    }
+
+    Get-ChildItem -Path $OutputPath -Filter "*.pdb" -Recurse | Remove-Item -Force
+    Write-BuildLog "Managed State Keeper ($RuntimeIdentifier) built successfully" -Level 'SUCCESS'
+}
+
+# Generates resources.pri and copies the compiled XAML (.xbf) into the publish output.
+#
+# EnableCoreMrtTooling is off in StartSet.App.csproj because the MSBuild PRI step needs
+# the Visual Studio UWP workload, which the build machines do not have. This does what
+# that step would: stage the .xbf files with the WinUI framework .pri files and merge
+# them into one resources.pri with makepri.exe from the Windows SDK. Same procedure as
+# the BootstrapMate GUI.
+function Publish-AppResources {
+    param(
+        [Parameter(Mandatory)][string]$Arch,
+        [Parameter(Mandatory)][string]$OutputDir,
+        [Parameter(Mandatory)][string]$AppProjectDir,
+        [Parameter(Mandatory)][string]$Config
+    )
+
+    Write-BuildLog "Generating XAML resources (XBF + resources.pri) for Managed State Keeper ($Arch)..."
+
+    # makepri.exe runs on the build host, so prefer the host architecture's copy.
+    $hostArch = switch ($env:PROCESSOR_ARCHITECTURE) {
+        'AMD64' { 'x64' }
+        'ARM64' { 'arm64' }
+        default { 'x86' }
+    }
+    $toolArchOrder = @($hostArch) + (@('x64', 'arm64', 'x86') | Where-Object { $_ -ne $hostArch })
+    $sdkBinRoots = @(
+        "$env:ProgramFiles\Windows Kits\10\bin",
+        "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+    ) | Where-Object { Test-Path $_ }
+
+    $makepri = $null
+    foreach ($root in $sdkBinRoots) {
+        foreach ($toolArch in $toolArchOrder) {
+            $candidate = Get-ChildItem "$root\*\$toolArch\makepri.exe" -ErrorAction SilentlyContinue |
+                Sort-Object { [version]($_.FullName -replace '.*\\(\d+\.\d+\.\d+\.\d+)\\.*', '$1') } -Descending |
+                Select-Object -First 1
+            if ($candidate) { $makepri = $candidate.FullName; break }
+        }
+        if ($makepri) { break }
+    }
+
+    if (-not $makepri) {
+        Write-BuildLog "makepri.exe not found; install the Windows 10/11 SDK" "ERROR"
+        return $false
+    }
+
+    $xbfFiles = Get-ChildItem "$AppProjectDir\obj\$Config" -Recurse -Filter "*.xbf" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match [regex]::Escape("\win-$Arch\") }
+    if (-not $xbfFiles) {
+        Write-BuildLog "No .xbf files under obj\$Config for win-$Arch" "ERROR"
+        return $false
+    }
+
+    $xbfRootPath = ($xbfFiles[0].FullName -split [regex]::Escape("\win-$Arch\"))[0] + "\win-$Arch"
+    $stagingDir = Join-Path ([System.IO.Path]::GetTempPath()) "startset-pri-$Arch"
+    if (Test-Path $stagingDir) { Remove-Item $stagingDir -Recurse -Force }
+    New-Item -ItemType Directory $stagingDir | Out-Null
+
+    # resources.pri maps resources by relative path (App.xbf, Views\RunPage.xbf), resolved
+    # beside the executable at run time, so each .xbf goes to staging and to the output.
+    foreach ($xbf in $xbfFiles) {
+        $relativePath = $xbf.FullName.Substring($xbfRootPath.Length).TrimStart('\')
+        foreach ($destRoot in @($stagingDir, $OutputDir)) {
+            $dest = Join-Path $destRoot $relativePath
+            $destDir = Split-Path $dest
+            if (-not (Test-Path $destDir)) { New-Item -ItemType Directory $destDir | Out-Null }
+            Copy-Item $xbf.FullName $dest -Force
+        }
+    }
+
+    # The framework .pri files carry the WinUI theme resources; makepri merges them in.
+    $frameworkPris = Get-ChildItem $OutputDir -Filter "Microsoft.*.pri"
+    foreach ($pri in $frameworkPris) {
+        Copy-Item $pri.FullName (Join-Path $stagingDir $pri.Name) -Force
+    }
+
+    $priconfigPath = Join-Path $stagingDir "priconfig.xml"
+    & $makepri createconfig /cf $priconfigPath /dq "en-US" /pv "10.0.0" /o 2>&1 | Out-Null
+
+    $outPriPath = Join-Path $OutputDir "resources.pri"
+    $priOutput = & $makepri new /pr $stagingDir /cf $priconfigPath /in "StartSet" /of $outPriPath /o 2>&1
+    $priExit = $LASTEXITCODE
+    Remove-Item $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    if ($priExit -ne 0) {
+        Write-BuildLog "makepri.exe failed (exit $priExit): $priOutput" "ERROR"
+        return $false
+    }
+
+    Write-BuildLog "Generated resources.pri: $($xbfFiles.Count) XBF + $($frameworkPris.Count) framework PRI(s)" "SUCCESS"
+    return $true
+}
+
+# Copies the published GUI folder into a package payload, beside the CLI and service.
+function Copy-GuiPayload {
+    param(
+        [string]$BinDir,
+        [string]$PayloadDir
+    )
+
+    $guiDir = Join-Path $BinDir 'gui'
+    if (-not (Test-Path (Join-Path $guiDir $GuiExecutableName))) {
+        throw "Managed State Keeper is missing from $guiDir; build the binaries first"
+    }
+
+    Copy-Item -Path (Join-Path $guiDir '*') -Destination $PayloadDir -Recurse -Force
+    Write-BuildLog "Copied Managed State Keeper to payload" "INFO"
 }
 
 #endregion
@@ -621,8 +756,10 @@ function Invoke-SignAllBinaries {
     
     foreach ($arch in $archs) {
         $archDir = Join-Path $OutputDir $arch
-        $exeFiles = Get-ChildItem -Path $archDir -Filter "*.exe" -File -ErrorAction SilentlyContinue
-        
+        $exeFiles = @(Get-ChildItem -Path $archDir -Filter "*.exe" -File -ErrorAction SilentlyContinue)
+        $guiExe = Join-Path $archDir "gui\$GuiExecutableName"
+        if (Test-Path $guiExe) { $exeFiles += Get-Item $guiExe }
+
         foreach ($exe in $exeFiles) {
             try {
                 Invoke-SignArtifact -Path $exe.FullName -Thumbprint $Thumbprint -Store $CertStore
@@ -638,7 +775,125 @@ function Invoke-SignAllBinaries {
 
 #endregion
 
-#region MSI Packaging Functions
+#region Packaging Functions
+
+# Every package -- .msi, .pkg, .nupkg and .intunewin -- is built by cimipkg from one
+# staged project: the same payload (CLI, service and Managed State Keeper), the same
+# install scripts from scripts/, and the same build-info.yaml. They used to be staged
+# separately, and the .nupkg and .intunewin carried only the two exes.
+function New-PackageProject {
+    param(
+        [Parameter(Mandatory)][string]$Arch,
+        [Parameter(Mandatory)][hashtable]$Version,
+        [Parameter(Mandatory)][string]$Format
+    )
+
+    $binDir = Join-Path $OutputDir $Arch
+    if (-not (Test-Path $binDir)) {
+        throw "Binary directory not found: $binDir"
+    }
+
+    $projectDir = Join-Path $OutputDir "${Format}_$Arch"
+    if (Test-Path $projectDir) {
+        Remove-Item $projectDir -Recurse -Force
+    }
+    $payloadDir = Join-Path $projectDir "payload"
+    $scriptsDir = Join-Path $projectDir "scripts"
+    New-Item -ItemType Directory -Path $payloadDir, $scriptsDir -Force | Out-Null
+
+    foreach ($binary in @("managedstatekeeper.exe", "StartSetService.exe")) {
+        $sourcePath = Join-Path $binDir $binary
+        if (-not (Test-Path $sourcePath)) {
+            throw "Binary not found: $sourcePath"
+        }
+        Copy-Item $sourcePath $payloadDir -Force
+    }
+    Copy-GuiPayload -BinDir $binDir -PayloadDir $payloadDir
+
+    foreach ($script in @("preinstall.ps1", "postinstall.ps1")) {
+        $source = Join-Path $InstallScriptsDir $script
+        if (Test-Path $source) {
+            Copy-Item $source (Join-Path $scriptsDir $script) -Force
+        } else {
+            Write-BuildLog "Install script not found: $source" "WARNING"
+        }
+    }
+
+    $buildInfoTemplatePath = Join-Path $BuildDir "pkg\build-info.yaml"
+    if (-not (Test-Path $buildInfoTemplatePath)) {
+        throw "build-info.yaml template not found: $buildInfoTemplatePath"
+    }
+    $buildInfo = Get-Content $buildInfoTemplatePath -Raw
+    $buildInfo = $buildInfo -replace '\{\{VERSION\}\}', $Version.Full
+    $buildInfo = $buildInfo -replace '\{\{ARCHITECTURE\}\}', $Arch
+    $buildInfo | Set-Content (Join-Path $projectDir "build-info.yaml") -Encoding UTF8
+
+    Write-BuildLog "Staged $Format project for $Arch" "INFO"
+    return $projectDir
+}
+
+# Builds one package with cimipkg and moves each output named in $Extensions to the
+# release folder as StartSet-<version>-<arch>.<ext>. Returns the moved paths.
+function Invoke-CimiPkgBuild {
+    param(
+        [Parameter(Mandatory)][string]$Arch,
+        [Parameter(Mandatory)][hashtable]$Version,
+        [Parameter(Mandatory)][string]$Format,
+        [string[]]$FormatArgs = @(),
+        [Parameter(Mandatory)][string[]]$Extensions,
+        [switch]$Sign,
+        [string]$Thumbprint
+    )
+
+    if (-not (Test-CimiPkg)) {
+        Write-BuildLog "cimipkg.exe not found. Build CimianTools first or add cimipkg to PATH." "ERROR"
+        return @()
+    }
+    $cimipkgPath = Get-CimiPkgPath
+
+    $projectDir = $null
+    try {
+        $projectDir = New-PackageProject -Arch $Arch -Version $Version -Format $Format
+
+        $cimipkgArgs = @("--verbose", "--skip-import") + $FormatArgs
+        if ($Sign -and $Thumbprint) {
+            $cimipkgArgs += @("--sign-thumbprint", $Thumbprint)
+        }
+        $cimipkgArgs += "`"$projectDir`""
+
+        Write-BuildLog "Building $Format for $Arch with cimipkg..." "INFO"
+        $process = Start-Process -FilePath $cimipkgPath -ArgumentList $cimipkgArgs -Wait -NoNewWindow -PassThru
+        if ($process.ExitCode -ne 0) {
+            Write-BuildLog "cimipkg failed for $Format ($Arch) with exit code $($process.ExitCode)" "ERROR"
+            return @()
+        }
+
+        $built = @()
+        foreach ($extension in $Extensions) {
+            $created = Get-ChildItem -Path (Join-Path $projectDir "build") -Filter "*.$extension" -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if (-not $created) {
+                Write-BuildLog "No .$extension in cimipkg output for $Arch" "WARNING"
+                continue
+            }
+            $finalPath = Join-Path $OutputDir "StartSet-$($Version.Full)-$Arch.$extension"
+            Move-Item $created.FullName $finalPath -Force
+            $size = (Get-Item $finalPath).Length / 1MB
+            Write-BuildLog "Created $(Split-Path $finalPath -Leaf) ($($size.ToString('F2')) MB)" "SUCCESS"
+            $built += $finalPath
+        }
+        return $built
+    }
+    catch {
+        Write-BuildLog "Failed to create $Format package for ${Arch}: $_" "ERROR"
+        return @()
+    }
+    finally {
+        if ($projectDir) {
+            Remove-Item $projectDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
 
 function Build-MsiPackage {
     param(
@@ -649,201 +904,9 @@ function Build-MsiPackage {
         [string]$CertStore
     )
 
-    Write-BuildLog "Building MSI for $Arch..." "INFO"
-
-    # Check for cimipkg
-    if (-not (Test-CimiPkg)) {
-        Write-BuildLog "cimipkg.exe not found. Build CimianTools first or add cimipkg to PATH." "ERROR"
-        return $null
-    }
-
-    $cimipkgPath = Get-CimiPkgPath
-    Write-BuildLog "Using cimipkg: $cimipkgPath" "INFO"
-
-    $binDir = Join-Path $OutputDir $Arch
-
-    if (-not (Test-Path $binDir)) {
-        Write-BuildLog "Binary directory not found: $binDir" "ERROR"
-        return $null
-    }
-
-    # Create temporary MSI build directory
-    $msiTempDir = Join-Path $OutputDir "msi_$Arch"
-    if (Test-Path $msiTempDir) {
-        Remove-Item $msiTempDir -Recurse -Force
-    }
-    New-Item -ItemType Directory -Path $msiTempDir -Force | Out-Null
-
-    # Create payload directory and copy binaries
-    $payloadDir = Join-Path $msiTempDir "payload"
-    New-Item -ItemType Directory -Path $payloadDir -Force | Out-Null
-
-    Write-BuildLog "Copying StartSet binaries for $Arch to MSI payload..." "INFO"
-    $binaries = @("managedstatekeeper.exe", "StartSetService.exe")
-
-    foreach ($binary in $binaries) {
-        $sourcePath = Join-Path $binDir $binary
-        if (Test-Path $sourcePath) {
-            Copy-Item $sourcePath $payloadDir -Force
-            Write-BuildLog "Copied $binary to MSI payload" "INFO"
-        } else {
-            Write-BuildLog "Binary not found: $sourcePath" "WARNING"
-        }
-    }
-
-    # Create scripts directory with pre/postinstall
-    $scriptsDir = Join-Path $msiTempDir "scripts"
-    New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
-
-    $postinstallTemplatePath = Join-Path $InstallScriptsDir "postinstall.ps1"
-    if (Test-Path $postinstallTemplatePath) {
-        Copy-Item $postinstallTemplatePath (Join-Path $scriptsDir "postinstall.ps1") -Force
-        Write-BuildLog "Added postinstall.ps1 script" "INFO"
-    }
-
-    $preinstallTemplatePath = Join-Path $InstallScriptsDir "preinstall.ps1"
-    if (Test-Path $preinstallTemplatePath) {
-        Copy-Item $preinstallTemplatePath (Join-Path $scriptsDir "preinstall.ps1") -Force
-        Write-BuildLog "Added preinstall.ps1 script" "INFO"
-    }
-
-    # Create build-info.yaml from template
-    $buildInfoTemplatePath = Join-Path $BuildDir "pkg\build-info.yaml"
-    if (-not (Test-Path $buildInfoTemplatePath)) {
-        Write-BuildLog "build-info.yaml template not found: $buildInfoTemplatePath" "ERROR"
-        Remove-Item $msiTempDir -Recurse -Force -ErrorAction SilentlyContinue
-        return $null
-    }
-
-    $buildInfoContent = Get-Content $buildInfoTemplatePath -Raw
-    $buildInfoContent = $buildInfoContent -replace '\{\{VERSION\}\}', $Version.Full
-    $buildInfoContent = $buildInfoContent -replace '\{\{ARCHITECTURE\}\}', $Arch
-    $buildInfoContent | Set-Content (Join-Path $msiTempDir "build-info.yaml") -Encoding UTF8
-    Write-BuildLog "Created build-info.yaml for MSI" "INFO"
-
-    # Build MSI using cimipkg (default format is MSI)
-    try {
-        $cimipkgArgs = @("--verbose")
-
-        if ($Sign -and $Thumbprint) {
-            $cimipkgArgs += @("--sign-thumbprint", $Thumbprint)
-        }
-
-        $cimipkgArgs += $msiTempDir
-
-        $process = Start-Process -FilePath $cimipkgPath -ArgumentList $cimipkgArgs -Wait -NoNewWindow -PassThru
-
-        if ($process.ExitCode -eq 0) {
-            # Look for the created .msi in the build subdirectory
-            $cimipkgBuildDir = Join-Path $msiTempDir "build"
-            if (Test-Path $cimipkgBuildDir) {
-                $createdMsi = Get-ChildItem -Path $cimipkgBuildDir -Filter "*.msi" | Select-Object -First 1
-                if ($createdMsi) {
-                    $finalName = "StartSet-$($Version.Full)-$Arch.msi"
-                    $finalPath = Join-Path $OutputDir $finalName
-                    Move-Item $createdMsi.FullName $finalPath -Force
-
-                    $msiSize = (Get-Item $finalPath).Length / 1MB
-                    Write-BuildLog "MSI created: $finalName ($($msiSize.ToString('F2')) MB)" "SUCCESS"
-
-                    Remove-Item $msiTempDir -Recurse -Force -ErrorAction SilentlyContinue
-                    return $finalPath
-                }
-            }
-
-            Write-BuildLog "MSI file not found in cimipkg build directory" "WARNING"
-        } else {
-            Write-BuildLog "cimipkg failed with exit code $($process.ExitCode)" "ERROR"
-        }
-    }
-    catch {
-        Write-BuildLog "Failed to create MSI package: $_" "ERROR"
-    }
-
-    # Clean up temp directory on failure
-    Remove-Item $msiTempDir -Recurse -Force -ErrorAction SilentlyContinue
-    return $null
+    $built = Invoke-CimiPkgBuild -Arch $Arch -Version $Version -Format 'msi' -Extensions @('msi') -Sign:$Sign -Thumbprint $Thumbprint
+    return $built | Select-Object -First 1
 }
-
-#endregion
-
-#region NuGet Packaging Functions
-
-function Build-NuGetPackage {
-    param(
-        [string]$Arch,
-        [hashtable]$Version,
-        [switch]$Sign,
-        [string]$Thumbprint
-    )
-    
-    Write-BuildLog "Creating NuGet package for $Arch..." "INFO"
-    
-    # Check for nuget
-    if (-not (Test-Command "nuget")) {
-        Write-BuildLog "nuget.exe not found - skipping NuGet package creation" "WARNING"
-        return $null
-    }
-    
-    # Use template from build/nupkg/
-    $templatePath = Join-Path $BuildDir "nupkg\StartSet.nuspec.template"
-    if (-not (Test-Path $templatePath)) {
-        Write-BuildLog "NuGet template not found: $templatePath" "ERROR"
-        return $null
-    }
-    
-    # Create temp nuspec directory
-    $tempNuspecDir = Join-Path $env:TEMP "StartSet-nupkg-$Arch-$(Get-Random)"
-    New-Item -ItemType Directory -Path $tempNuspecDir -Force | Out-Null
-    
-    $nuspecPath = Join-Path $tempNuspecDir "StartSet.$Arch.nuspec"
-    
-    # Read template and replace placeholders
-    $nuspecContent = Get-Content $templatePath -Raw
-    $nuspecContent = $nuspecContent -replace '{{VERSION}}', $Version.Semantic
-    $nuspecContent = $nuspecContent -replace '{{ARCHITECTURE}}', $Arch
-    
-    $nuspecContent | Set-Content -Path $nuspecPath -Encoding UTF8
-    
-    Write-BuildLog "Created nuspec from template for $Arch" "INFO"
-    
-    $nupkgOutput = Join-Path $OutputDir "StartSet-$Arch.$($Version.Semantic).nupkg"
-    
-    # Pack
-    & nuget pack $nuspecPath -OutputDirectory $OutputDir -BasePath $tempNuspecDir -NoDefaultExcludes
-    
-    # Cleanup temp directory
-    Remove-Item $tempNuspecDir -Recurse -Force -ErrorAction SilentlyContinue
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-BuildLog "NuGet pack failed for $Arch" "WARNING"
-        return $null
-    }
-    
-    # Find and rename the package
-    $builtPkg = Get-ChildItem $OutputDir -Filter "StartSet-$Arch*.nupkg" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    
-    if ($builtPkg -and $builtPkg.FullName -ne $nupkgOutput) {
-        Move-Item $builtPkg.FullName $nupkgOutput -Force
-    }
-    
-    if (Test-Path $nupkgOutput) {
-        Write-BuildLog "Created NuGet package: $(Split-Path $nupkgOutput -Leaf)" "SUCCESS"
-        
-        if ($Sign) {
-            Invoke-SignNuget -NupkgPath $nupkgOutput -Thumbprint $Thumbprint
-        }
-        
-        return $nupkgOutput
-    }
-    
-    Write-BuildLog "NuGet package not found after build" "WARNING"
-    return $null
-}
-
-#endregion
-
-#region PKG Packaging Functions
 
 function Build-PkgPackage {
     param(
@@ -853,223 +916,34 @@ function Build-PkgPackage {
         [string]$Thumbprint,
         [string]$Store
     )
-    
-    Write-BuildLog "Creating .pkg package for $Arch..." "INFO"
-    
-    # Check for cimipkg
-    if (-not (Test-CimiPkg)) {
-        Write-BuildLog "cimipkg.exe not found. Build CimianToolsGo first or add cimipkg to PATH." "ERROR"
-        return $null
-    }
-    
-    $cimipkgPath = Get-CimiPkgPath
-    Write-BuildLog "Using cimipkg: $cimipkgPath" "INFO"
-    
-    $binDir = Join-Path $OutputDir $Arch
-    
-    if (-not (Test-Path $binDir)) {
-        Write-BuildLog "Binary directory not found: $binDir" "ERROR"
-        return $null
-    }
-    
-    # Create temporary .pkg build directory
-    $pkgTempDir = Join-Path $OutputDir "pkg_$Arch"
-    if (Test-Path $pkgTempDir) {
-        Remove-Item $pkgTempDir -Recurse -Force
-    }
-    New-Item -ItemType Directory -Path $pkgTempDir -Force | Out-Null
-    
-    # Create payload directory and copy binaries
-    $payloadDir = Join-Path $pkgTempDir "payload"
-    New-Item -ItemType Directory -Path $payloadDir -Force | Out-Null
-    
-    Write-BuildLog "Copying StartSet binaries for $Arch architecture to .pkg payload..." "INFO"
-    $binaries = @(
-        "managedstatekeeper.exe",
-        "StartSetService.exe"
-    )
-    
-    foreach ($binary in $binaries) {
-        $sourcePath = Join-Path $binDir $binary
-        if (Test-Path $sourcePath) {
-            Copy-Item $sourcePath $payloadDir -Force
-            Write-BuildLog "Copied $binary to .pkg payload" "INFO"
-        } else {
-            Write-BuildLog "Binary not found: $sourcePath" "WARNING"
-        }
-    }
-    
-    # Create scripts directory and copy pre/postinstall scripts
-    $scriptsDir = Join-Path $pkgTempDir "scripts"
-    New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
-    
-    # Stage the postinstall script from its one copy in scripts/.
-    $postinstallTemplatePath = Join-Path $InstallScriptsDir "postinstall.ps1"
-    if (Test-Path $postinstallTemplatePath) {
-        Copy-Item $postinstallTemplatePath (Join-Path $scriptsDir "postinstall.ps1") -Force
-        Write-BuildLog "Added postinstall.ps1 script to .pkg" "INFO"
-    } else {
-        Write-BuildLog "Postinstall template not found: $postinstallTemplatePath" "WARNING"
-    }
-    
-    # Stage the preinstall script from its one copy in scripts/.
-    $preinstallTemplatePath = Join-Path $InstallScriptsDir "preinstall.ps1"
-    if (Test-Path $preinstallTemplatePath) {
-        Copy-Item $preinstallTemplatePath (Join-Path $scriptsDir "preinstall.ps1") -Force
-        Write-BuildLog "Added preinstall.ps1 script to .pkg" "INFO"
-    } else {
-        Write-BuildLog "Preinstall template not found: $preinstallTemplatePath" "WARNING"
-    }
-    
-    # Copy and process build-info.yaml from build/pkg/ template
-    $buildInfoTemplatePath = Join-Path $BuildDir "pkg\build-info.yaml"
-    if (Test-Path $buildInfoTemplatePath) {
-        $buildInfoContent = Get-Content $buildInfoTemplatePath -Raw
-        $buildInfoContent = $buildInfoContent -replace '\{\{VERSION\}\}', $Version.Full
-        $buildInfoContent = $buildInfoContent -replace '\{\{ARCHITECTURE\}\}', $Arch
-        
-        if ($Sign -and $Thumbprint) {
-            $buildInfoContent += @"
 
-code_signing:
-  enabled: true
-  certificate_thumbprint: $Thumbprint
-  certificate_store: $Store
-"@
-        }
-        
-        $buildInfoPath = Join-Path $pkgTempDir "build-info.yaml"
-        $buildInfoContent | Set-Content $buildInfoPath -Encoding UTF8
-        Write-BuildLog "Created build-info.yaml for .pkg" "INFO"
-    } else {
-        Write-BuildLog "build-info.yaml template not found: $buildInfoTemplatePath" "ERROR"
-        return $null
-    }
-    
-    # Build the .pkg package using cimipkg
-    Write-BuildLog "Building .pkg package for $Arch architecture..." "INFO"
-    
-    try {
-        $cimipkgArgs = @("--verbose", $pkgTempDir)
-        
-        $process = Start-Process -FilePath $cimipkgPath -ArgumentList $cimipkgArgs -Wait -NoNewWindow -PassThru
-        
-        if ($process.ExitCode -eq 0) {
-            Write-BuildLog ".pkg package created successfully for ${Arch}" "SUCCESS"
-            
-            # Look for the created .pkg file in the build subdirectory
-            $buildDir = Join-Path $pkgTempDir "build"
-            if (Test-Path $buildDir) {
-                $createdPkgFiles = Get-ChildItem -Path $buildDir -Filter "*.pkg"
-                foreach ($pkgFile in $createdPkgFiles) {
-                    # Move the .pkg to the release directory with proper naming
-                    $pkgName = "StartSet-$($Version.Full)-$Arch.pkg"
-                    $finalPkgPath = Join-Path $OutputDir $pkgName
-                    Move-Item $pkgFile.FullName $finalPkgPath -Force
-                    
-                    $pkgSize = (Get-Item $finalPkgPath).Length / 1MB
-                    Write-BuildLog ".pkg created: $pkgName ($($pkgSize.ToString('F2')) MB)" "SUCCESS"
-                    
-                    # Clean up temp directory
-                    Remove-Item $pkgTempDir -Recurse -Force -ErrorAction SilentlyContinue
-                    
-                    return $finalPkgPath
-                }
-            }
-            
-            Write-BuildLog ".pkg file not found in build directory" "WARNING"
-        } else {
-            Write-BuildLog "cimipkg failed with exit code $($process.ExitCode)" "ERROR"
-        }
-    }
-    catch {
-        Write-BuildLog "Failed to create .pkg package: $_" "ERROR"
-    }
-    
-    # Clean up temp directory on failure
-    Remove-Item $pkgTempDir -Recurse -Force -ErrorAction SilentlyContinue
-    
-    return $null
+    $built = Invoke-CimiPkgBuild -Arch $Arch -Version $Version -Format 'pkg' -FormatArgs @('--pkg') -Extensions @('pkg') -Sign:$Sign -Thumbprint $Thumbprint
+    return $built | Select-Object -First 1
 }
 
-#endregion
+function Build-NuGetPackage {
+    param(
+        [string]$Arch,
+        [hashtable]$Version,
+        [switch]$Sign,
+        [string]$Thumbprint
+    )
 
-#region IntuneWin Packaging Functions
+    $built = Invoke-CimiPkgBuild -Arch $Arch -Version $Version -Format 'nupkg' -FormatArgs @('--nupkg') -Extensions @('nupkg') -Sign:$Sign -Thumbprint $Thumbprint
+    return $built | Select-Object -First 1
+}
 
+# The .intunewin wraps the MSI, built from the same staged project.
 function Build-IntuneWinPackage {
     param(
         [string]$Arch,
-        [hashtable]$Version
+        [hashtable]$Version,
+        [switch]$Sign,
+        [string]$Thumbprint
     )
-    
-    Write-BuildLog "Creating IntuneWin package for $Arch..." "INFO"
-    
-    # Check for IntuneWinAppUtil
-    $intuneUtil = Get-Command "IntuneWinAppUtil.exe" -ErrorAction SilentlyContinue
-    if (-not $intuneUtil) {
-        Write-BuildLog "IntuneWinAppUtil.exe not found - skipping IntuneWin package creation" "WARNING"
-        return $null
-    }
-    
-    $msiFile = Join-Path $OutputDir "StartSet-$($Version.Full)-$Arch.msi"
-    
-    if (-not (Test-Path $msiFile)) {
-        # Try to create from executables directly
-        $archDir = Join-Path $OutputDir $Arch
-        $startsetExe = Join-Path $archDir "managedstatekeeper.exe"
-        
-        if (-not (Test-Path $startsetExe)) {
-            Write-BuildLog "Neither MSI nor executables found for $Arch - cannot create IntuneWin package" "WARNING"
-            return $null
-        }
-        
-        $sourceFile = $startsetExe
-        $sourceDir = $archDir
-    }
-    else {
-        $sourceFile = $msiFile
-        $sourceDir = $OutputDir
-    }
-    
-    $intunewinOutput = Join-Path $OutputDir "StartSet-$($Version.Full)-$Arch.intunewin"
-    
-    # Remove existing
-    if (Test-Path $intunewinOutput) {
-        Remove-Item $intunewinOutput -Force
-    }
-    
-    # Create IntuneWin package
-    $intuneProcess = Start-Process -FilePath "IntuneWinAppUtil.exe" `
-        -ArgumentList "-c", "`"$sourceDir`"", "-s", "`"$sourceFile`"", "-o", "`"$OutputDir`"", "-q" `
-        -Wait -NoNewWindow -PassThru `
-        -RedirectStandardOutput "$env:TEMP\intune_$Arch.log" `
-        -RedirectStandardError "$env:TEMP\intune_${Arch}_err.log"
-    
-    if ($intuneProcess.ExitCode -eq 0) {
-        # Find and rename the generated file
-        $generatedFile = Get-ChildItem -Path $OutputDir -Filter "*.intunewin" |
-            Where-Object { $_.Name -like "*StartSet*" -or $_.Name -like "*startset*" } |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-            
-        if ($generatedFile -and $generatedFile.FullName -ne $intunewinOutput) {
-            Move-Item $generatedFile.FullName $intunewinOutput -Force
-        }
-        
-        if (Test-Path $intunewinOutput) {
-            Write-BuildLog "Created IntuneWin package: $(Split-Path $intunewinOutput -Leaf)" "SUCCESS"
-            return $intunewinOutput
-        }
-    }
-    else {
-        Write-BuildLog "IntuneWinAppUtil failed with exit code $($intuneProcess.ExitCode)" "WARNING"
-    }
-    
-    # Cleanup temp files
-    Remove-Item "$env:TEMP\intune_$Arch.log" -ErrorAction SilentlyContinue
-    Remove-Item "$env:TEMP\intune_${Arch}_err.log" -ErrorAction SilentlyContinue
-    
-    return $null
+
+    $built = Invoke-CimiPkgBuild -Arch $Arch -Version $Version -Format 'intunewin' -FormatArgs @('--intunewin') -Extensions @('intunewin') -Sign:$Sign -Thumbprint $Thumbprint
+    return $built | Select-Object -First 1
 }
 
 #endregion
@@ -1353,7 +1227,7 @@ try {
     # IntuneWin packages (if requested)
     if ($IntuneWin) {
         foreach ($arch in $archs) {
-            $null = Build-IntuneWinPackage -Arch $arch -Version $version
+            $null = Build-IntuneWinPackage -Arch $arch -Version $version -Sign:$shouldSign -Thumbprint $actualThumbprint
         }
     }
     
