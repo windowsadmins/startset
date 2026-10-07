@@ -4,16 +4,22 @@ using StartSet.Core.Enums;
 using StartSet.Engine;
 using StartSet.Infrastructure.Configuration;
 using StartSet.Infrastructure.Logging;
+using StartSet.Infrastructure.Security;
 
 namespace StartSet.Service.Workers;
 
 /// <summary>
 /// Worker that watches for trigger files and executes corresponding scripts.
 /// </summary>
+/// <remarks>
+/// Trigger files are honoured in ScriptRoot and in TriggerDirectory, the one folder a
+/// standard user may create files in. See <see cref="TriggerFiles"/> for which triggers
+/// a standard user may fire.
+/// </remarks>
 public class TriggerWatcherWorker : BackgroundService
 {
     private readonly PreferencesService _preferencesService;
-    private FileSystemWatcher? _watcher;
+    private readonly List<FileSystemWatcher> _watchers = [];
 
     public TriggerWatcherWorker(PreferencesService preferencesService)
     {
@@ -46,22 +52,41 @@ public class TriggerWatcherWorker : BackgroundService
 
     private void SetupWatcher()
     {
-        try
+        foreach (var directory in TriggerFiles.Directories)
         {
-            _watcher = new FileSystemWatcher(Paths.ScriptRoot)
+            try
             {
-                Filter = ".startset.*",
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.CreationTime,
-                EnableRaisingEvents = true
-            };
+                var watcher = new FileSystemWatcher(directory)
+                {
+                    Filter = ".startset.*",
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.CreationTime,
+                    EnableRaisingEvents = true
+                };
 
-            _watcher.Created += OnTriggerFileCreated;
-            StartSetLogger.Debug("Trigger file watcher started for {Path}", Paths.ScriptRoot);
+                watcher.Created += OnTriggerFileCreated;
+                _watchers.Add(watcher);
+                StartSetLogger.Debug("Trigger file watcher started for {Path}", directory);
+            }
+            catch (Exception ex)
+            {
+                StartSetLogger.Error(ex, "Failed to set up trigger file watcher for {Path}", directory);
+            }
         }
-        catch (Exception ex)
-        {
-            StartSetLogger.Error(ex, "Failed to set up trigger file watcher");
-        }
+    }
+
+    /// <summary>
+    /// Whether the trigger may be acted on. A privileged trigger a standard user created is
+    /// deleted here, unused, and the reason logged.
+    /// </summary>
+    private static bool Admit(string path)
+    {
+        var decision = TriggerFiles.Evaluate(path);
+        if (decision.IsTrusted)
+            return true;
+
+        StartSetLogger.Warning("Ignoring trigger: {Reason}", decision.Reason ?? path);
+        try { File.Delete(path); } catch { }
+        return false;
     }
 
     private async void OnTriggerFileCreated(object sender, FileSystemEventArgs e)
@@ -77,6 +102,12 @@ public class TriggerWatcherWorker : BackgroundService
             StartSetLogger.Warning("Unknown trigger file: {File}", e.Name ?? "Unknown");
             return;
         }
+
+        if (!Admit(e.FullPath))
+            return;
+
+        // Pick up any policy or settings change made since the last run.
+        _preferencesService.Reload();
 
         using var session = new SessionLogger();
         session.StartSession("trigger");
@@ -128,16 +159,19 @@ public class TriggerWatcherWorker : BackgroundService
             (Paths.TriggerCleanup, Array.Empty<PayloadType>())
         };
 
-        foreach (var (path, payloadTypes) in triggerFiles)
+        var locations = triggerFiles.SelectMany(t =>
+            TriggerFiles.LocationsOf(t.Item1).Select(location => (Path: location, Name: t.Item1, Types: t.Item2)));
+
+        foreach (var (path, name, payloadTypes) in locations)
         {
             if (stoppingToken.IsCancellationRequested)
                 break;
 
-            if (File.Exists(path))
+            if (File.Exists(path) && Admit(path))
             {
                 StartSetLogger.Information("Processing existing trigger file: {File}", path);
 
-                if (path == Paths.TriggerCleanup)
+                if (name == Paths.TriggerCleanup)
                 {
                     ExecutionEngine.CleanupTriggerFiles();
                 }
@@ -171,18 +205,19 @@ public class TriggerWatcherWorker : BackgroundService
     /// LoginOnce still honours its run-once record, so this replays only what has
     /// not already run for that user.
     /// </summary>
-    private static PayloadType[] GetPayloadTypesForTrigger(string triggerPath) => triggerPath switch
+    private static PayloadType[] GetPayloadTypesForTrigger(string triggerPath) => Path.GetFileName(triggerPath) switch
     {
-        var p when p == Paths.TriggerOnDemand => [PayloadType.OnDemand],
-        var p when p == Paths.TriggerOnDemandPrivileged => [PayloadType.OnDemandPrivileged],
-        var p when p == Paths.TriggerLogin => [PayloadType.LoginOnce, PayloadType.LoginEvery],
-        var p when p == Paths.TriggerLoginPrivileged => [PayloadType.LoginPrivilegedOnce, PayloadType.LoginPrivilegedEvery],
+        var n when n == Path.GetFileName(Paths.TriggerOnDemand) => [PayloadType.OnDemand],
+        var n when n == Path.GetFileName(Paths.TriggerOnDemandPrivileged) => [PayloadType.OnDemandPrivileged],
+        var n when n == Path.GetFileName(Paths.TriggerLogin) => [PayloadType.LoginOnce, PayloadType.LoginEvery],
+        var n when n == Path.GetFileName(Paths.TriggerLoginPrivileged) => [PayloadType.LoginPrivilegedOnce, PayloadType.LoginPrivilegedEvery],
         _ => []
     };
 
     public override void Dispose()
     {
-        _watcher?.Dispose();
+        foreach (var watcher in _watchers)
+            watcher.Dispose();
         base.Dispose();
     }
 }

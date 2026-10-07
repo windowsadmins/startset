@@ -57,6 +57,7 @@ try {
         "$startsetDataDir\on-demand",
         "$startsetDataDir\on-demand-privileged",
         "$startsetDataDir\share",
+        "$startsetDataDir\triggers",
         "$startsetDataDir\logs"
     )
 
@@ -69,6 +70,25 @@ try {
             Write-Host "  Exists: $dir"
         }
     }
+
+    # Lock the data folder to Administrators and SYSTEM. The service runs as SYSTEM and
+    # executes what is in it, so nothing there may be writable by a standard user.
+    # Root: SYSTEM and Administrators full control, Users read, not inherited from
+    # ProgramData. Every folder below takes that by inheritance, with explicit entries
+    # removed. triggers is the one folder where Users may also create files: that is
+    # how a standard user asks for an on-demand run. Same ACL as the MSI and as the
+    # service applies at start-up.
+    Write-Host "Securing $startsetDataDir..."
+    & icacls.exe $startsetDataDir /reset /Q | Out-Null
+    & icacls.exe $startsetDataDir /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)RX" /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "icacls could not set the ACL on $startsetDataDir (exit $LASTEXITCODE)" }
+    & icacls.exe $startsetDataDir /setowner "*S-1-5-18" /Q | Out-Null
+    foreach ($dir in $directories) {
+        & icacls.exe "$dir" /reset /T /C /Q | Out-Null
+    }
+    & icacls.exe "$startsetDataDir\triggers" /grant "*S-1-5-32-545:(WD,S)" /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "icacls could not open $startsetDataDir\triggers to users (exit $LASTEXITCODE)" }
+    Write-Host "  Writable by Administrators and SYSTEM only; users may create trigger files in triggers"
 
     # Verify service executable exists
     $serviceExecutable = Join-Path $installDir "StartSetService.exe"

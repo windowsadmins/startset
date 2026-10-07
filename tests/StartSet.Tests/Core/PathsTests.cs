@@ -14,8 +14,8 @@ public class PathsTests
     [Fact]
     public void AllPayloadDirectories_ContainsExpectedCount()
     {
-        // 9 payload dirs + share + logs + reports = 12
-        Paths.AllPayloadDirectories.Should().HaveCount(12);
+        // 9 payload dirs + share + triggers + logs + reports = 13
+        Paths.AllPayloadDirectories.Should().HaveCount(13);
     }
 
     [Fact]

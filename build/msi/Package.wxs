@@ -54,6 +54,7 @@
         <Directory Id="DIR_OnDemand" Name="on-demand" />
         <Directory Id="DIR_OnDemandPrivileged" Name="on-demand-privileged" />
         <Directory Id="DIR_Share" Name="share" />
+        <Directory Id="DIR_Triggers" Name="triggers" />
         <Directory Id="DIR_Logs" Name="logs" />
       </Directory>
     </StandardDirectory>
@@ -101,6 +102,23 @@
 
     <!-- Create empty directories for scripts -->
     <ComponentGroup Id="ScriptDirectories">
+      <!-- The service runs as SYSTEM and executes what is under ManagedState, so the root is
+           SYSTEM and Administrators full control, Users read, not inherited from ProgramData;
+           every folder below inherits it. The service applies the same ACL at start-up
+           (DataDirectoryGuard.RootSddl). -->
+      <Component Id="SecureDataRoot" Guid="6F1D3A52-8C47-4B9E-A2D1-5E7C9B0F3A84" Directory="SCRIPTSFOLDER">
+        <CreateFolder>
+          <PermissionEx Sddl="O:SYG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)" />
+        </CreateFolder>
+        <RegistryValue Root="HKLM" Key="SOFTWARE\StartSet" Name="DataDirectoryAcl" Value="1" Type="integer" KeyPath="yes" />
+      </Component>
+      <!-- The one folder where Users may also create files: a trigger file is how a standard
+           user asks for an on-demand run (DataDirectoryGuard.TriggerSddl). -->
+      <Component Id="CreateTriggers" Guid="9A2E6C41-3D58-4F7B-B1E0-8C4D2F6A9B13" Directory="DIR_Triggers">
+        <CreateFolder>
+          <PermissionEx Sddl="O:SYG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)(A;;0x100002;;;BU)" />
+        </CreateFolder>
+      </Component>
       <Component Id="CreateBootOnce" Guid="C3D4E5F6-7890-ABCD-EF12-345678901234" Directory="DIR_BootOnce">
         <CreateFolder />
       </Component>

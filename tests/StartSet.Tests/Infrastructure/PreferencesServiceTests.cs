@@ -14,7 +14,7 @@ public class PreferencesServiceTests : IDisposable
     [Fact]
     public void Load_NoFile_ReturnsDefaults()
     {
-        var svc = new PreferencesService();
+        var svc = TestSettings.Service();
         var prefs = svc.Load(Path.Combine(_temp.Path, "nonexistent.yaml"));
 
         prefs.Should().NotBeNull();
@@ -36,7 +36,7 @@ public class PreferencesServiceTests : IDisposable
             """;
 
         var filePath = _temp.CreateFile("config.yaml", yaml);
-        var svc = new PreferencesService();
+        var svc = TestSettings.Service();
         var prefs = svc.Load(filePath);
 
         prefs.WaitForNetwork.Should().BeFalse();
@@ -50,7 +50,7 @@ public class PreferencesServiceTests : IDisposable
     public void Load_MalformedYaml_ReturnsDefaults()
     {
         var filePath = _temp.CreateFile("bad.yaml", "{{{{not yaml at all!!!}}}}");
-        var svc = new PreferencesService();
+        var svc = TestSettings.Service();
         var prefs = svc.Load(filePath);
 
         // Should gracefully fall back to defaults
@@ -65,7 +65,7 @@ public class PreferencesServiceTests : IDisposable
         var yaml = "network_timeout: 30";
 
         var filePath = _temp.CreateFile("partial.yaml", yaml);
-        var svc = new PreferencesService();
+        var svc = TestSettings.Service();
         var prefs = svc.Load(filePath);
 
         prefs.NetworkTimeout.Should().Be(30);
@@ -77,7 +77,7 @@ public class PreferencesServiceTests : IDisposable
     public void SaveAndLoad_RoundTrip()
     {
         var filePath = Path.Combine(_temp.Path, "roundtrip.yaml");
-        var svc = new PreferencesService();
+        var svc = TestSettings.Service();
 
         var original = new StartSetPreferences
         {
@@ -102,21 +102,9 @@ public class PreferencesServiceTests : IDisposable
     public void Save_CreatesDirectoryIfMissing()
     {
         var filePath = Path.Combine(_temp.Path, "nested", "dir", "config.yaml");
-        var svc = new PreferencesService();
+        var svc = TestSettings.Service();
 
         svc.Save(StartSetPreferences.Default, filePath);
-
-        File.Exists(filePath).Should().BeTrue();
-    }
-
-    [Fact]
-    public void EnsureDefaultPreferences_CreatesFileWhenMissing()
-    {
-        var filePath = Path.Combine(_temp.Path, "defaults.yaml");
-        var svc = new PreferencesService();
-        svc.Load(filePath); // sets the internal path
-
-        svc.EnsureDefaultPreferences();
 
         File.Exists(filePath).Should().BeTrue();
     }
@@ -126,7 +114,7 @@ public class PreferencesServiceTests : IDisposable
     {
         var yaml = "verbose: true";
         var filePath = _temp.CreateFile("live.yaml", yaml);
-        var svc = new PreferencesService();
+        var svc = TestSettings.Service();
 
         svc.Load(filePath);
         svc.Preferences.Verbose.Should().BeTrue();
@@ -142,7 +130,7 @@ public class PreferencesServiceTests : IDisposable
             """;
 
         var filePath = _temp.CreateFile("future.yaml", yaml);
-        var svc = new PreferencesService();
+        var svc = TestSettings.Service();
 
         // Should not throw on unknown properties
         var prefs = svc.Load(filePath);

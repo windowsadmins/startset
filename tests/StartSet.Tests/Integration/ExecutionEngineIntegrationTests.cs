@@ -44,7 +44,7 @@ public class ExecutionEngineIntegrationTests : IDisposable
         };
 
         var configPath = _temp.CreateFile("Config.yaml", "");
-        var service = new PreferencesService();
+        var service = TestSettings.Service();
         service.Save(prefs, configPath);
         service.Load(configPath);
         return service;
@@ -56,7 +56,7 @@ public class ExecutionEngineIntegrationTests : IDisposable
     public async Task ExecuteAsync_EmptyDirectory_ReturnsEmptyResults()
     {
         var service = CreatePreferencesService();
-        var engine = new ExecutionEngine(service, _temp.Path);
+        var engine = new ExecutionEngine(service, _temp.Path, TestSettings.TrustAll);
 
         // Point at a directory with no scripts — directories won't exist under temp
         // but ExecutionEngine tolerates missing directories gracefully
@@ -78,7 +78,7 @@ public class ExecutionEngineIntegrationTests : IDisposable
         // discovery and execution pipeline without needing a user session.
         var service = CreatePreferencesService();
         _temp.CreateFile(Path.Combine("boot-every", "Marker.ps1"), "exit 0");
-        var engine = new ExecutionEngine(service, _temp.Path);
+        var engine = new ExecutionEngine(service, _temp.Path, TestSettings.TrustAll);
 
         var results = await engine.ExecuteAsync([PayloadType.BootEvery], waitForNetwork: false);
 
@@ -104,7 +104,7 @@ public class ExecutionEngineIntegrationTests : IDisposable
     public async Task ExecuteAsync_IgnoredUser_SkipsExecution()
     {
         var service = CreatePreferencesService(ignoredUsers: ["testuser"]);
-        var engine = new ExecutionEngine(service, _temp.Path);
+        var engine = new ExecutionEngine(service, _temp.Path, TestSettings.TrustAll);
 
         var results = await engine.ExecuteAsync(
             [PayloadType.LoginEvery],
@@ -118,7 +118,7 @@ public class ExecutionEngineIntegrationTests : IDisposable
     public async Task ExecuteAsync_IgnoredUser_CaseInsensitive()
     {
         var service = CreatePreferencesService(ignoredUsers: ["TestUser"]);
-        var engine = new ExecutionEngine(service, _temp.Path);
+        var engine = new ExecutionEngine(service, _temp.Path, TestSettings.TrustAll);
 
         var results = await engine.ExecuteAsync(
             [PayloadType.LoginEvery],
@@ -132,7 +132,7 @@ public class ExecutionEngineIntegrationTests : IDisposable
     public async Task ExecuteAsync_NonIgnoredUser_DoesNotSkip()
     {
         var service = CreatePreferencesService(ignoredUsers: ["blockeduser"]);
-        var engine = new ExecutionEngine(service, _temp.Path);
+        var engine = new ExecutionEngine(service, _temp.Path, TestSettings.TrustAll);
 
         // This user is NOT in the ignored list, so the engine won't skip.
         // The engine reads the temp root, which has no login-every directory, so
@@ -161,7 +161,7 @@ public class ExecutionEngineIntegrationTests : IDisposable
         cts.Cancel(); // Cancel immediately
 
         var service = CreatePreferencesService();
-        var engine = new ExecutionEngine(service, _temp.Path);
+        var engine = new ExecutionEngine(service, _temp.Path, TestSettings.TrustAll);
 
         var results = await engine.ExecuteAsync(
             [PayloadType.BootEvery, PayloadType.BootOnce],
@@ -197,7 +197,7 @@ public class ExecutionEngineIntegrationTests : IDisposable
     public async Task ExecuteAsync_MultiplePayloadTypes_ProcessesAll()
     {
         var service = CreatePreferencesService();
-        var engine = new ExecutionEngine(service, _temp.Path);
+        var engine = new ExecutionEngine(service, _temp.Path, TestSettings.TrustAll);
 
         // With no scripts on disk, all types should return empty but not throw
         var results = await engine.ExecuteAsync(

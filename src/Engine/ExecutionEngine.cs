@@ -7,6 +7,7 @@ using StartSet.Engine.Processors;
 using StartSet.Infrastructure.Configuration;
 using StartSet.Infrastructure.Logging;
 using StartSet.Infrastructure.Network;
+using StartSet.Infrastructure.Security;
 using StartSet.Infrastructure.Tracking;
 using StartSet.Infrastructure.Validation;
 
@@ -23,7 +24,7 @@ public class ExecutionEngine
 
     private readonly PreferencesService _preferencesService;
     private readonly ChecksumService _checksumService;
-    private readonly PermissionValidator _permissionValidator;
+    private readonly Func<string, TrustResult> _payloadTrust;
     private readonly NetworkMonitor _networkMonitor;
     private readonly List<IScriptProcessor> _processors;
     private readonly string? _payloadRoot;
@@ -40,12 +41,21 @@ public class ExecutionEngine
     /// workstation with StartSet on it, such a test executes real login payloads
     /// for effect before failing its assertion.
     /// </param>
-    public ExecutionEngine(PreferencesService preferencesService, string? payloadRoot = null)
+    /// <param name="payloadTrust">
+    /// Decides whether a payload file may run. Null -- the default -- is
+    /// <see cref="FileTrust.CheckFile"/> against the data root: a payload a
+    /// non-administrator could write is skipped. Tests whose payloads they wrote
+    /// themselves pass their own.
+    /// </param>
+    public ExecutionEngine(
+        PreferencesService preferencesService,
+        string? payloadRoot = null,
+        Func<string, TrustResult>? payloadTrust = null)
     {
         _preferencesService = preferencesService;
         _payloadRoot = payloadRoot;
         _checksumService = new ChecksumService();
-        _permissionValidator = new PermissionValidator();
+        _payloadTrust = payloadTrust ?? DefaultPayloadTrust;
         _networkMonitor = new NetworkMonitor(_preferencesService.Preferences.NetworkTimeout);
 
         // Register all processors
@@ -57,6 +67,15 @@ public class ExecutionEngine
             new PackageProcessor()
         ];
     }
+
+    private static readonly bool RunningAsSystem = FileTrust.IsRunningAsSystem();
+
+    /// <summary>
+    /// The installed rule: the folder chain up to the data root must be locked, and as
+    /// SYSTEM an individually owned payload is first given to Administrators.
+    /// </summary>
+    private static TrustResult DefaultPayloadTrust(string path) =>
+        FileTrust.CheckFile(path, Paths.ScriptRoot, normalizeOwner: RunningAsSystem);
 
     /// <summary>
     /// Executes all scripts for the specified payload types.
@@ -376,15 +395,16 @@ public class ExecutionEngine
                         script.SkipReason = "Checksum validation failed";
                     }
 
-                    // Validate permissions for elevated scripts
-                    if (payloadType.RequiresElevation())
+                    // Every payload type, not only the elevated ones: a user-context
+                    // payload runs in whoever signs in next, so one a standard user
+                    // could write is a way into every other user's session. Logged at
+                    // warning so the reason is in the run log, not just the skip.
+                    var trust = _payloadTrust(filePath);
+                    if (!trust.IsTrusted)
                     {
-                        var permResult = _permissionValidator.ValidateScript(filePath, payloadType);
-                        if (!permResult.IsValid)
-                        {
-                            script.ShouldSkip = true;
-                            script.SkipReason = $"Permission validation failed: {permResult.Error}";
-                        }
+                        script.ShouldSkip = true;
+                        script.SkipReason = $"Not run: {trust.Reason}. Payloads must be writable only by Administrators and SYSTEM";
+                        StartSetLogger.Warning("Skipping {Script}: {Reason}", script.FileName, script.SkipReason);
                     }
 
                     scripts.Add(script);
@@ -465,7 +485,7 @@ public class ExecutionEngine
             Paths.TriggerCleanup
         };
 
-        foreach (var triggerFile in triggerFiles)
+        foreach (var triggerFile in triggerFiles.SelectMany(TriggerFiles.LocationsOf))
         {
             try
             {

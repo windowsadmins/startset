@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StartSet.Infrastructure.Configuration;
 using StartSet.Infrastructure.Logging;
+using StartSet.Infrastructure.Security;
 using StartSet.Service.Workers;
 
 namespace StartSet.Service;
@@ -13,6 +14,11 @@ public class Program
 {
     public static async Task Main(string[] args)
     {
+        // Lock the data folder down before anything in it is read: the service runs as
+        // SYSTEM and acts on Config.yaml and the payload folders, so none of them may be
+        // writable by a standard user. Notes are logged once the logger is up.
+        var guardNotes = DataDirectoryGuard.Secure();
+
         // Initialize preferences
         var preferencesService = new PreferencesService();
         preferencesService.Load();
@@ -23,6 +29,8 @@ public class Program
         try
         {
             StartSetLogger.Information("StartSet Service starting");
+            foreach (var note in guardNotes)
+                StartSetLogger.Warning("Data directory: {Note}", note);
 
             var builder = Host.CreateApplicationBuilder(args);
 

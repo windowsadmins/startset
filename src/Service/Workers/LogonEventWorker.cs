@@ -6,6 +6,7 @@ using StartSet.Engine;
 using StartSet.Infrastructure.Configuration;
 using StartSet.Engine.Native;
 using StartSet.Infrastructure.Logging;
+using StartSet.Infrastructure.Security;
 
 namespace StartSet.Service.Workers;
 
@@ -140,7 +141,10 @@ public class LogonEventWorker : BackgroundService
             // something then simply waits -- which is how a login batch came to
             // sit blocked for twenty-four minutes on a lab machine. See
             // ShellReadiness for the full account.
-            var prefs = _preferencesService.Preferences;
+            //
+            // Reloaded per logon so a policy or settings change applies without
+            // restarting the service.
+            var prefs = _preferencesService.Reload();
 
             if (sessionId >= 0)
             {
@@ -187,8 +191,11 @@ public class LogonEventWorker : BackgroundService
                     waitForNetwork: false);
                 results = results.Concat(privEveryResults).ToList();
 
-                // Check for login-privileged trigger (gates once scripts only)
-                if (File.Exists(StartSet.Core.Constants.Paths.TriggerLoginPrivileged))
+                // Check for login-privileged trigger (gates once scripts only). It runs
+                // payloads as SYSTEM, so a copy a standard user created is deleted unused.
+                if (TriggerFiles.Consume(
+                        StartSet.Core.Constants.Paths.TriggerLoginPrivileged,
+                        reason => StartSetLogger.Warning("Ignoring trigger: {Reason}", reason)))
                 {
                     var privOnceResults = await engine.ExecuteAsync(
                         [PayloadType.LoginPrivilegedOnce],
@@ -196,8 +203,6 @@ public class LogonEventWorker : BackgroundService
                         waitForNetwork: false);
 
                     results = results.Concat(privOnceResults).ToList();
-
-                    try { File.Delete(StartSet.Core.Constants.Paths.TriggerLoginPrivileged); } catch { }
                 }
 
                 session.EndSession(

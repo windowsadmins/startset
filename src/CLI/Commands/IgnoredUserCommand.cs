@@ -48,7 +48,7 @@ public static class IgnoredUserCommand
             {
                 try
                 {
-                    preferencesService.Save(prefs);
+                    preferencesService.SaveMachineSetting(nameof(prefs.IgnoredUsers), prefs.IgnoredUsers);
                     foreach (var user in added)
                     {
                         Console.WriteLine($"Added ignored user: {user}");
@@ -120,7 +120,7 @@ public static class IgnoredUserCommand
             {
                 try
                 {
-                    preferencesService.Save(prefs);
+                    preferencesService.SaveMachineSetting(nameof(prefs.IgnoredUsers), prefs.IgnoredUsers);
                     foreach (var user in removed)
                     {
                         Console.WriteLine($"Removed ignored user: {user}");
