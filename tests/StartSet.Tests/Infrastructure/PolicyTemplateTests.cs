@@ -38,8 +38,8 @@ public class PolicyTemplateTests
     }
 
     /// <summary>
-    /// Values StartSet reads from policy only, which are not settings: they are not on the Prefs
-    /// tab and are ignored at every other level. Each is a REG_SZ text element under Security.
+    /// Values StartSet reads from policy only ([PolicyOnly] settings): ignored at every other
+    /// level and shown locked on the Prefs tab. Each is a REG_SZ text element under Security.
     /// </summary>
     public static readonly string[] PolicyOnlyValues = ["ManifestSigningKey"];
 
@@ -140,6 +140,11 @@ public class PolicyTemplateTests
         svc.IsManaged(name).Should().BeTrue();
         PrefsElevation.CanEdit(isElevated: true, isPolicyManaged: svc.Sources[name] == SettingSource.Policy).Should().BeFalse();
     }
+
+    [Fact]
+    public void PolicyOnlyValues_AreThePolicyOnlySettings() =>
+        PreferenceResolver.Settings.Where(s => s.PolicyOnly).Select(s => s.Name)
+            .Should().BeEquivalentTo(PolicyOnlyValues);
 
     [Fact]
     public void PolicyOnlyValues_AreTextUnderSecurity()
