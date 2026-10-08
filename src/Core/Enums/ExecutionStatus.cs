@@ -41,5 +41,13 @@ public enum ExecutionStatus
     /// of problem invisible: a login payload that silently did nothing looked
     /// exactly like one that worked.
     /// </summary>
-    Deferred
+    Deferred,
+
+    /// <summary>
+    /// Script signing is required by policy and the payload's signature did not verify --
+    /// none, a bad one, a file type that cannot carry one, or an unusable policy key. The
+    /// payload was refused and not run. Reported as a failure, never a skip: a payload that
+    /// was refused has not applied its settings, and that has to be visible.
+    /// </summary>
+    SignatureRejected
 }

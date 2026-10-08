@@ -38,6 +38,20 @@ public class Program
         preferencesService.Load();
         StartSetLogger.Initialize(preferencesService.Preferences, isService: false);
 
+        // Signing tools touch only the files they are given. They run on build agents and
+        // admin workstations, so they open no session under ProgramData and write no report.
+        if (args.Length > 0 && SigningCommand.Names.Contains(args[0]))
+        {
+            try
+            {
+                return await BuildRootCommand(preferencesService).InvokeAsync(args);
+            }
+            finally
+            {
+                StartSetLogger.CloseAndFlush();
+            }
+        }
+
         // Start a logging session (day-nested timestamped directory)
         using var sessionLogger = new SessionLogger();
         var runType = args.Length > 0 ? args[0] : "cli";
@@ -127,6 +141,11 @@ public class Program
 
         // Checksum command (matching outset)
         rootCommand.AddCommand(ChecksumCommand.Create(preferencesService));
+
+        // Script signing
+        rootCommand.AddCommand(SigningCommand.CreateSign());
+        rootCommand.AddCommand(SigningCommand.CreateVerify(preferencesService));
+        rootCommand.AddCommand(SigningCommand.CreateGenerateKeypair());
 
         return rootCommand;
     }

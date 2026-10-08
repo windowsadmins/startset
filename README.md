@@ -104,6 +104,11 @@ managedstatekeeper list-overrides
 managedstatekeeper checksum myscript.ps1
 managedstatekeeper checksum all --record
 
+# Sign and verify scripts (matching outset); see Script Signing
+managedstatekeeper sign myscript.ps1
+managedstatekeeper verify myscript.ps1 --public-key <base64>
+managedstatekeeper generate-keypair
+
 # Show version
 managedstatekeeper --version
 ```
@@ -120,7 +125,7 @@ Each setting is read from the first of these that sets it:
 
 Environment variables are not a source. Both registry keys are read in the 64-bit view.
 
-Every setting can be set at every level. In the registry the value name is the setting's name below, with booleans and numbers as `REG_DWORD` and lists as `REG_MULTI_SZ`; the Config.yaml name (`wait_for_network`) is accepted as an alias.
+Every setting except `ManifestSigningKey`, which only policy can set, can be set at every level. In the registry the value name is the setting's name below, with booleans and numbers as `REG_DWORD` and lists as `REG_MULTI_SZ`; the Config.yaml name (`wait_for_network`) is accepted as an alias.
 
 | Setting | Config.yaml | Default |
 |---|---|---|
@@ -143,6 +148,7 @@ Every setting can be set at every level. In the registry the value name is the s
 | `LogScriptOutput` | `log_script_output` | `1` |
 | `IgnoredUsers` | `ignored_users` | empty |
 | `Overrides` | `overrides` | empty |
+| `ManifestSigningKey` | policy only | unset; see [Script Signing](#script-signing) |
 
 `resources/StartSet.admx` with `resources/en-US/StartSet.adml` is an administrative template for every setting above, for Group Policy (copy them to `C:\Windows\PolicyDefinitions` or the central store) or Intune (Imported Administrative templates). Each policy writes the value of the same name under `HKLM\SOFTWARE\Policies\StartSet`, and Managed State Keeper shows it as managed by policy and locks the field. The template's Security category also carries `ManifestSigningKey`, which StartSet reads from policy only and does not show on the Prefs tab.
 
@@ -168,6 +174,38 @@ Otherwise it is skipped, and the run log says why.
 An owner always holds the right to change a file's permissions, so the service gives any file owned by an individual account to the Administrators group.
 
 The first time the service locks a folder that was open before, any file in it whose owner is not an administrator could have come from a standard user. The service moves each such file to `C:\ProgramData\ManagedState\quarantine\<timestamp>\` and logs it; nothing is deleted. After that first lock, files are only given to Administrators.
+
+## Script Signing
+
+StartSet can require every payload to be signed, the way outset does on the Mac with `manifest_signing_key`. Set an Ed25519 public key, base64 of the raw 32 bytes, as the `ManifestSigningKey` string value under `HKLM\SOFTWARE\Policies\StartSet`. Only policy can set it: a value in machine settings, `Config.yaml` or on the command line is ignored and logged.
+
+While it is set, a script runs only if it carries a valid signature line made with the matching private key. Anything else is refused, not run, logged as an error and reported in `items.json` as an error with the reason:
+
+- a script with no signature, or one changed after signing (line endings included);
+- an `.exe`, `.msi` or `.msix`, which cannot carry a signature;
+- every payload, when the policy value is not a valid key.
+
+The signature is one line in the script: `# ed25519: <base64>` in a `.ps1`, `REM ed25519: <base64>` in a `.cmd` or `.bat`. It covers the file's bytes with that line removed (split on LF, rejoined with LF, a leading UTF-8 BOM kept), so for an LF PowerShell script it is the same signature outset makes and checks, and one key can sign for both.
+
+Generate a keypair, and keep the private key out of source control:
+
+```powershell
+managedstatekeeper generate-keypair
+```
+
+Sign scripts in place. The private key comes from an environment variable, `STARTSET_SIGNING_KEY` unless `--key-env` names another, or from `--key-file`; it is never taken as an argument:
+
+```powershell
+managedstatekeeper sign .\login-every\Wallpaper.ps1 .\boot-every\Setup.cmd
+```
+
+Check signatures, against the policy key or one you pass. The exit code is 1 if any file fails:
+
+```powershell
+managedstatekeeper verify .\login-every\Wallpaper.ps1 --public-key <base64>
+```
+
+Sign after the last edit: any change, including a line-ending conversion by git, breaks the signature.
 
 ## Trigger Files
 

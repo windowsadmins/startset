@@ -18,10 +18,14 @@ public enum SettingSource
 /// <summary>
 /// One setting in <see cref="StartSetPreferences"/>. Its registry value name is the property
 /// name (WaitForNetwork); the Config.yaml name (wait_for_network) is accepted as an alias.
+/// A <see cref="PolicyOnly"/> setting is read from policy alone.
 /// </summary>
 public sealed record PreferenceSetting(string Name, string YamlName, PropertyInfo Property)
 {
     public Type ValueType => Property.PropertyType;
+
+    /// <summary>True when only policy may set this; see <see cref="PolicyOnlyAttribute"/>.</summary>
+    public bool PolicyOnly => Property.GetCustomAttribute<PolicyOnlyAttribute>() is not null;
 }
 
 /// <summary>The effective preferences, and which source supplied each one.</summary>
@@ -81,6 +85,15 @@ public static class PreferenceResolver
         {
             sources[setting.Name] = SettingSource.Default;
 
+            if (setting.PolicyOnly)
+            {
+                IgnoreUnlessPolicy(setting, FromDictionary(legacyFile, setting), SettingSource.LegacyFile);
+                IgnoreUnlessPolicy(setting, FromStore(machine, setting), SettingSource.MachineSettings);
+                IgnoreUnlessPolicy(setting, FromDictionary(commandLine, setting), SettingSource.CommandLine);
+                Apply(setting, FromStore(policy, setting), SettingSource.Policy);
+                continue;
+            }
+
             Apply(setting, FromDictionary(legacyFile, setting), SettingSource.LegacyFile);
             Apply(setting, FromStore(machine, setting), SettingSource.MachineSettings);
             Apply(setting, FromStore(policy, setting), SettingSource.Policy);
@@ -88,6 +101,12 @@ public static class PreferenceResolver
         }
 
         return new PreferenceResolution { Preferences = preferences, Sources = sources, Notes = notes };
+
+        void IgnoreUnlessPolicy(PreferenceSetting setting, object? raw, SettingSource source)
+        {
+            if (raw is null) return;
+            notes.Add($"{setting.Name} from {Describe(source)} is ignored: only policy (HKLM\\SOFTWARE\\Policies\\StartSet) can set it");
+        }
 
         void Apply(PreferenceSetting setting, object? raw, SettingSource source)
         {

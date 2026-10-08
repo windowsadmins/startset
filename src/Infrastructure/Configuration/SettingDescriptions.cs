@@ -28,6 +28,7 @@ public static class SettingDescriptions
         ["ChecksumValidation"] = new(Execution, "Require checksums", "Runs only payloads whose checksum is recorded."),
         ["ParallelExecution"] = new(Execution, "Parallel execution", "Not implemented yet: payloads still run one at a time."),
         ["Overrides"] = new(Execution, "Run-once overrides", "Run-once payloads to run again. One file name per line."),
+        ["ManifestSigningKey"] = new(Execution, "Script signing key", "Ed25519 public key. When set, only scripts signed with the matching private key run. Set by policy only."),
 
         ["LoginScriptTimeout"] = new(Login, "Login payload timeout", "Longest one payload in a user's session may run.", "seconds"),
         ["LoginBatchBudget"] = new(Login, "Login batch budget", "Total time for one batch of login payloads.", "seconds"),

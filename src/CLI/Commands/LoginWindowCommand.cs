@@ -25,7 +25,7 @@ public static class LoginWindowCommand
                 username: null,
                 waitForNetwork: false);
 
-            var failed = results.Count(r => r.Status == ExecutionStatus.Failed);
+            var failed = results.Count(r => r.Status is ExecutionStatus.Failed or ExecutionStatus.SignatureRejected);
             Environment.ExitCode = failed > 0 ? 1 : 0;
         });
 

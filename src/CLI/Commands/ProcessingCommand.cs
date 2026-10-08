@@ -51,7 +51,7 @@ public static class ProcessingCommand
                 username: username ?? (payloadType.Value.IsUserContext() ? Environment.UserName : null),
                 waitForNetwork: !skipNetwork && payloadType.Value == PayloadType.BootOnce);
 
-            var failed = results.Count(r => r.Status == ExecutionStatus.Failed);
+            var failed = results.Count(r => r.Status is ExecutionStatus.Failed or ExecutionStatus.SignatureRejected);
             Environment.ExitCode = failed > 0 ? 1 : 0;
         }, typeArgument, usernameOption, skipNetworkOption);
 

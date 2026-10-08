@@ -105,7 +105,7 @@ public partial class PrefsViewModel : ObservableObject
                     Kind = KindOf(setting),
                     Value = setting.Property.GetValue(preferences),
                     Source = source,
-                    CanEdit = PrefsElevation.CanEdit(IsElevated, source == SettingSource.Policy),
+                    CanEdit = PrefsElevation.CanEdit(IsElevated, source == SettingSource.Policy || setting.PolicyOnly),
                 };
             })
             .ToList();
