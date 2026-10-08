@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English (en-US) strings for StartSet.admx. -->
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           revision="1.0"
+                           schemaVersion="1.0"
+                           xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+
+  <displayName>StartSet</displayName>
+  <description>Settings for StartSet and Managed State Keeper</description>
+
+  <resources>
+    <stringTable>
+      <string id="Cat_StartSet">StartSet</string>
+      <string id="Cat_Network">Network</string>
+      <string id="Cat_Execution">Execution</string>
+      <string id="Cat_Login">Login</string>
+      <string id="Cat_Logging">Logging</string>
+      <string id="Cat_Security">Security</string>
+
+      <string id="WaitForNetwork">Wait for network before boot payloads</string>
+      <string id="WaitForNetwork_Help">Holds boot payloads until the network is up.
+
+Enabled: wait for the network (default).
+Disabled: run boot payloads straight away.
+
+Writes WaitForNetwork (REG_DWORD 1 or 0).</string>
+      <string id="NetworkTimeout">Network wait</string>
+      <string id="NetworkTimeout_Help">How long, in seconds, to wait for the network before boot payloads.
+
+Default: 180.
+
+Writes NetworkTimeout (REG_DWORD).</string>
+      <string id="IgnoreNetworkFailure">Run payloads without network</string>
+      <string id="IgnoreNetworkFailure_Help">Runs boot payloads even when the network never came up.
+
+Enabled: run them anyway.
+Disabled: skip them when the network wait times out (default).
+
+Writes IgnoreNetworkFailure (REG_DWORD 1 or 0).</string>
+      <string id="ScriptTimeout">Payload timeout</string>
+      <string id="ScriptTimeout_Help">Longest a boot or privileged payload may run, in seconds. Login payloads use the login payload timeout instead.
+
+Default: 3600.
+
+Writes ScriptTimeout (REG_DWORD).</string>
+      <string id="AllowedExtensions">Allowed file types</string>
+      <string id="AllowedExtensions_Help">File extensions StartSet runs, one per line, with the leading dot (.ps1). This list replaces the built-in one; it does not add to it.
+
+Default: .ps1 .cmd .bat .exe .msi .msix
+
+Writes AllowedExtensions (REG_MULTI_SZ).</string>
+      <string id="ChecksumValidation">Require checksums</string>
+      <string id="ChecksumValidation_Help">Runs only payloads whose checksum is recorded.
+
+Enabled: a payload without a matching recorded checksum is skipped.
+Disabled: checksums are not required (default).
+
+Writes ChecksumValidation (REG_DWORD 1 or 0).</string>
+      <string id="ParallelExecution">Parallel execution</string>
+      <string id="ParallelExecution_Help">Reserved. Not implemented yet: payloads still run one at a time whatever this is set to.
+
+Writes ParallelExecution (REG_DWORD 1 or 0).</string>
+      <string id="Overrides">Run-once overrides</string>
+      <string id="Overrides_Help">Run-once payloads to run again, one file name per line. A listed payload runs even if it has run before.
+
+Default: empty.
+
+Writes Overrides (REG_MULTI_SZ).</string>
+      <string id="LoginScriptTimeout">Login payload timeout</string>
+      <string id="LoginScriptTimeout_Help">Longest one payload in a user's session may run, in seconds.
+
+Default: 120.
+
+Writes LoginScriptTimeout (REG_DWORD).</string>
+      <string id="LoginBatchBudget">Login batch budget</string>
+      <string id="LoginBatchBudget_Help">Total time, in seconds, for one batch of login payloads. Payloads still waiting when it runs out are deferred to the next logon.
+
+Default: 300.
+
+Writes LoginBatchBudget (REG_DWORD).</string>
+      <string id="LoginDelay">Login delay</string>
+      <string id="LoginDelay_Help">Pause, in seconds, before login payloads run.
+
+Default: 0.
+
+Writes LoginDelay (REG_DWORD).</string>
+      <string id="ShellReadyTimeout">Desktop wait</string>
+      <string id="ShellReadyTimeout_Help">How long, in seconds, to wait for the user's desktop before login payloads. On timeout they run anyway.
+
+Default: 180.
+
+Writes ShellReadyTimeout (REG_DWORD).</string>
+      <string id="ShellSettleDelay">Desktop settle</string>
+      <string id="ShellSettleDelay_Help">Pause, in seconds, after the desktop appears and before login payloads run.
+
+Default: 10.
+
+Writes ShellSettleDelay (REG_DWORD).</string>
+      <string id="LogonCatchUpGrace">Missed logon grace</string>
+      <string id="LogonCatchUpGrace_Help">Wait, in seconds, after the service starts before it runs login payloads for a user who was already signed in.
+
+Default: 20.
+
+Writes LogonCatchUpGrace (REG_DWORD).</string>
+      <string id="IgnoredUsers">Ignored users</string>
+      <string id="IgnoredUsers_Help">Accounts login payloads never run for, one per line.
+
+Default: empty.
+
+Writes IgnoredUsers (REG_MULTI_SZ).</string>
+      <string id="Verbose">Verbose logging</string>
+      <string id="Verbose_Help">Writes debug detail to the log.
+
+Enabled: on.
+Disabled: off (default).
+
+Writes Verbose (REG_DWORD 1 or 0).</string>
+      <string id="Debug">Debug logging</string>
+      <string id="Debug_Help">Writes debug detail to the log.
+
+Enabled: on.
+Disabled: off (default).
+
+Writes Debug (REG_DWORD 1 or 0).</string>
+      <string id="LogLevel">Log level</string>
+      <string id="LogLevel_Help">Minimum level written to the log. Overrides the verbose and debug logging policies.
+
+Not configured: decided by those two policies.
+
+Writes LogLevel (REG_SZ: Debug, Information, Warning or Error).</string>
+      <string id="LogLevel_Debug">Debug</string>
+      <string id="LogLevel_Information">Information</string>
+      <string id="LogLevel_Warning">Warning</string>
+      <string id="LogLevel_Error">Error</string>
+      <string id="LogScriptOutput">Log payload output</string>
+      <string id="LogScriptOutput_Help">Folds each payload's output into the session log.
+
+Enabled: on (default).
+Disabled: off.
+
+Writes LogScriptOutput (REG_DWORD 1 or 0).</string>
+      <string id="ManifestSigningKey">Manifest signing public key</string>
+      <string id="ManifestSigningKey_Help">The public key StartSet uses to verify signed script manifests: the base64 encoding of a raw 32-byte Ed25519 public key (44 characters).
+
+StartSet reads this value from policy only. The same value in machine settings or Config.yaml is ignored, so only an administrator managing the device can choose which signer is trusted.
+
+This value is not shown on the Prefs tab of Managed State Keeper.
+
+Writes ManifestSigningKey (REG_SZ).</string>
+    </stringTable>
+
+    <presentationTable>
+      <presentation id="NetworkTimeout">
+        <decimalTextBox refId="NetworkTimeout_Value" defaultValue="180" spinStep="1">Network wait (seconds):</decimalTextBox>
+      </presentation>
+      <presentation id="ScriptTimeout">
+        <decimalTextBox refId="ScriptTimeout_Value" defaultValue="3600" spinStep="1">Payload timeout (seconds):</decimalTextBox>
+      </presentation>
+      <presentation id="AllowedExtensions">
+        <multiTextBox refId="AllowedExtensions_Value">Allowed file types (one per line):</multiTextBox>
+      </presentation>
+      <presentation id="Overrides">
+        <multiTextBox refId="Overrides_Value">Run-once overrides (one per line):</multiTextBox>
+      </presentation>
+      <presentation id="LoginScriptTimeout">
+        <decimalTextBox refId="LoginScriptTimeout_Value" defaultValue="120" spinStep="1">Login payload timeout (seconds):</decimalTextBox>
+      </presentation>
+      <presentation id="LoginBatchBudget">
+        <decimalTextBox refId="LoginBatchBudget_Value" defaultValue="300" spinStep="1">Login batch budget (seconds):</decimalTextBox>
+      </presentation>
+      <presentation id="LoginDelay">
+        <decimalTextBox refId="LoginDelay_Value" defaultValue="0" spinStep="1">Login delay (seconds):</decimalTextBox>
+      </presentation>
+      <presentation id="ShellReadyTimeout">
+        <decimalTextBox refId="ShellReadyTimeout_Value" defaultValue="180" spinStep="1">Desktop wait (seconds):</decimalTextBox>
+      </presentation>
+      <presentation id="ShellSettleDelay">
+        <decimalTextBox refId="ShellSettleDelay_Value" defaultValue="10" spinStep="1">Desktop settle (seconds):</decimalTextBox>
+      </presentation>
+      <presentation id="LogonCatchUpGrace">
+        <decimalTextBox refId="LogonCatchUpGrace_Value" defaultValue="20" spinStep="1">Missed logon grace (seconds):</decimalTextBox>
+      </presentation>
+      <presentation id="IgnoredUsers">
+        <multiTextBox refId="IgnoredUsers_Value">Ignored users (one per line):</multiTextBox>
+      </presentation>
+      <presentation id="LogLevel">
+        <dropdownList refId="LogLevel_Value" defaultItem="1" noSort="true">Log level:</dropdownList>
+      </presentation>
+      <presentation id="ManifestSigningKey">
+        <textBox refId="ManifestSigningKey_Value">
+          <label>Ed25519 public key (base64):</label>
+        </textBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

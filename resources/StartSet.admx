@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  StartSet (Managed State Keeper) administrative template.
+
+  Group Policy: copy StartSet.admx to C:\Windows\PolicyDefinitions and
+  en-US\StartSet.adml to C:\Windows\PolicyDefinitions\en-US (or the central store).
+  Intune: Devices > Configuration > Imported Administrative templates.
+
+  Every policy writes one value under HKLM\SOFTWARE\Policies\StartSet. Its value name is
+  the setting's name, the same name the machine settings key uses. A value set here wins over
+  machine settings and Config.yaml, and Managed State Keeper shows it as "Managed by policy"
+  and locks the field. Not configured or Disabled removes the value, except for the on/off
+  policies, where Disabled writes 0.
+
+  Toggles are REG_DWORD 1/0, numbers REG_DWORD, LogLevel REG_SZ, lists REG_MULTI_SZ.
+
+  Categories mirror the groups on the Prefs tab (SettingDescriptions.Groups). To add a
+  setting, add its policy to the matching category; a new Prefs group gets a new category
+  under StartSet. A test fails while any setting lacks a policy here.
+
+  Security holds values StartSet reads from policy only (PolicyTemplateTests.PolicyOnlyValues),
+  which are not on the Prefs tab and are ignored in machine settings and Config.yaml.
+-->
+<policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   revision="1.0"
+                   schemaVersion="1.0"
+                   xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+
+  <policyNamespaces>
+    <target prefix="StartSet" namespace="StartSet.Policies" />
+    <using prefix="windows" namespace="Microsoft.Policies.Windows" />
+  </policyNamespaces>
+
+  <resources minRequiredRevision="1.0" />
+
+  <categories>
+    <category name="StartSet" displayName="$(string.Cat_StartSet)" />
+    <category name="Network" displayName="$(string.Cat_Network)">
+      <parentCategory ref="StartSet" />
+    </category>
+    <category name="Execution" displayName="$(string.Cat_Execution)">
+      <parentCategory ref="StartSet" />
+    </category>
+    <category name="Login" displayName="$(string.Cat_Login)">
+      <parentCategory ref="StartSet" />
+    </category>
+    <category name="Logging" displayName="$(string.Cat_Logging)">
+      <parentCategory ref="StartSet" />
+    </category>
+    <category name="Security" displayName="$(string.Cat_Security)">
+      <parentCategory ref="StartSet" />
+    </category>
+  </categories>
+
+  <policies>
+
+    <!-- Network -->
+
+    <policy name="WaitForNetwork"
+            class="Machine"
+            displayName="$(string.WaitForNetwork)"
+            explainText="$(string.WaitForNetwork_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            valueName="WaitForNetwork">
+      <parentCategory ref="Network" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <policy name="NetworkTimeout"
+            class="Machine"
+            displayName="$(string.NetworkTimeout)"
+            explainText="$(string.NetworkTimeout_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.NetworkTimeout)">
+      <parentCategory ref="Network" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <decimal id="NetworkTimeout_Value" valueName="NetworkTimeout" minValue="1" maxValue="86400" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="IgnoreNetworkFailure"
+            class="Machine"
+            displayName="$(string.IgnoreNetworkFailure)"
+            explainText="$(string.IgnoreNetworkFailure_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            valueName="IgnoreNetworkFailure">
+      <parentCategory ref="Network" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <!-- Execution -->
+
+    <policy name="ScriptTimeout"
+            class="Machine"
+            displayName="$(string.ScriptTimeout)"
+            explainText="$(string.ScriptTimeout_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.ScriptTimeout)">
+      <parentCategory ref="Execution" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <decimal id="ScriptTimeout_Value" valueName="ScriptTimeout" minValue="1" maxValue="604800" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="AllowedExtensions"
+            class="Machine"
+            displayName="$(string.AllowedExtensions)"
+            explainText="$(string.AllowedExtensions_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.AllowedExtensions)">
+      <parentCategory ref="Execution" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <multiText id="AllowedExtensions_Value" valueName="AllowedExtensions" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="ChecksumValidation"
+            class="Machine"
+            displayName="$(string.ChecksumValidation)"
+            explainText="$(string.ChecksumValidation_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            valueName="ChecksumValidation">
+      <parentCategory ref="Execution" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <policy name="ParallelExecution"
+            class="Machine"
+            displayName="$(string.ParallelExecution)"
+            explainText="$(string.ParallelExecution_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            valueName="ParallelExecution">
+      <parentCategory ref="Execution" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <policy name="Overrides"
+            class="Machine"
+            displayName="$(string.Overrides)"
+            explainText="$(string.Overrides_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.Overrides)">
+      <parentCategory ref="Execution" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <multiText id="Overrides_Value" valueName="Overrides" required="true" />
+      </elements>
+    </policy>
+
+    <!-- Login -->
+
+    <policy name="LoginScriptTimeout"
+            class="Machine"
+            displayName="$(string.LoginScriptTimeout)"
+            explainText="$(string.LoginScriptTimeout_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.LoginScriptTimeout)">
+      <parentCategory ref="Login" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <decimal id="LoginScriptTimeout_Value" valueName="LoginScriptTimeout" minValue="1" maxValue="86400" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="LoginBatchBudget"
+            class="Machine"
+            displayName="$(string.LoginBatchBudget)"
+            explainText="$(string.LoginBatchBudget_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.LoginBatchBudget)">
+      <parentCategory ref="Login" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <decimal id="LoginBatchBudget_Value" valueName="LoginBatchBudget" minValue="1" maxValue="86400" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="LoginDelay"
+            class="Machine"
+            displayName="$(string.LoginDelay)"
+            explainText="$(string.LoginDelay_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.LoginDelay)">
+      <parentCategory ref="Login" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <decimal id="LoginDelay_Value" valueName="LoginDelay" minValue="0" maxValue="3600" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="ShellReadyTimeout"
+            class="Machine"
+            displayName="$(string.ShellReadyTimeout)"
+            explainText="$(string.ShellReadyTimeout_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.ShellReadyTimeout)">
+      <parentCategory ref="Login" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <decimal id="ShellReadyTimeout_Value" valueName="ShellReadyTimeout" minValue="0" maxValue="3600" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="ShellSettleDelay"
+            class="Machine"
+            displayName="$(string.ShellSettleDelay)"
+            explainText="$(string.ShellSettleDelay_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.ShellSettleDelay)">
+      <parentCategory ref="Login" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <decimal id="ShellSettleDelay_Value" valueName="ShellSettleDelay" minValue="0" maxValue="3600" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="LogonCatchUpGrace"
+            class="Machine"
+            displayName="$(string.LogonCatchUpGrace)"
+            explainText="$(string.LogonCatchUpGrace_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.LogonCatchUpGrace)">
+      <parentCategory ref="Login" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <decimal id="LogonCatchUpGrace_Value" valueName="LogonCatchUpGrace" minValue="1" maxValue="3600" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="IgnoredUsers"
+            class="Machine"
+            displayName="$(string.IgnoredUsers)"
+            explainText="$(string.IgnoredUsers_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.IgnoredUsers)">
+      <parentCategory ref="Login" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <multiText id="IgnoredUsers_Value" valueName="IgnoredUsers" required="true" />
+      </elements>
+    </policy>
+
+    <!-- Logging -->
+
+    <policy name="Verbose"
+            class="Machine"
+            displayName="$(string.Verbose)"
+            explainText="$(string.Verbose_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            valueName="Verbose">
+      <parentCategory ref="Logging" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <policy name="Debug"
+            class="Machine"
+            displayName="$(string.Debug)"
+            explainText="$(string.Debug_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            valueName="Debug">
+      <parentCategory ref="Logging" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <policy name="LogLevel"
+            class="Machine"
+            displayName="$(string.LogLevel)"
+            explainText="$(string.LogLevel_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.LogLevel)">
+      <parentCategory ref="Logging" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <enum id="LogLevel_Value" valueName="LogLevel" required="true">
+          <item displayName="$(string.LogLevel_Debug)"><value><string>Debug</string></value></item>
+          <item displayName="$(string.LogLevel_Information)"><value><string>Information</string></value></item>
+          <item displayName="$(string.LogLevel_Warning)"><value><string>Warning</string></value></item>
+          <item displayName="$(string.LogLevel_Error)"><value><string>Error</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+
+    <policy name="LogScriptOutput"
+            class="Machine"
+            displayName="$(string.LogScriptOutput)"
+            explainText="$(string.LogScriptOutput_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            valueName="LogScriptOutput">
+      <parentCategory ref="Logging" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <!-- Security: policy-only values -->
+
+    <policy name="ManifestSigningKey"
+            class="Machine"
+            displayName="$(string.ManifestSigningKey)"
+            explainText="$(string.ManifestSigningKey_Help)"
+            key="SOFTWARE\Policies\StartSet"
+            presentation="$(presentation.ManifestSigningKey)">
+      <parentCategory ref="Security" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <elements>
+        <text id="ManifestSigningKey_Value" valueName="ManifestSigningKey" maxLength="64" required="true" />
+      </elements>
+    </policy>
+
+  </policies>
+</policyDefinitions>

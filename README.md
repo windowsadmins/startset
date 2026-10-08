@@ -144,7 +144,9 @@ Every setting can be set at every level. In the registry the value name is the s
 | `IgnoredUsers` | `ignored_users` | empty |
 | `Overrides` | `overrides` | empty |
 
-To set a timeout by policy:
+`resources/StartSet.admx` with `resources/en-US/StartSet.adml` is an administrative template for every setting above, for Group Policy (copy them to `C:\Windows\PolicyDefinitions` or the central store) or Intune (Imported Administrative templates). Each policy writes the value of the same name under `HKLM\SOFTWARE\Policies\StartSet`, and Managed State Keeper shows it as managed by policy and locks the field. The template's Security category also carries `ManifestSigningKey`, which StartSet reads from policy only and does not show on the Prefs tab.
+
+To set a timeout by policy without the template:
 
 ```powershell
 New-Item -Path 'HKLM:\SOFTWARE\Policies\StartSet' -Force | Out-Null
