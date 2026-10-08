@@ -26,7 +26,7 @@ namespace StartSet.Infrastructure.Security;
 ///      run, not something StartSet reads or executes.
 ///   5. Gives each remaining individually owned file to BUILTIN\Administrators, so no
 ///      account keeps the implicit WRITE_DAC an owner holds.
-/// The MSI and the package postinstall set the same ACL when they install.
+/// The package postinstall sets the same ACL when it installs.
 /// </remarks>
 [SupportedOSPlatform("windows")]
 public static class DataDirectoryGuard
