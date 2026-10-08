@@ -68,7 +68,7 @@ public static class SigningCommand
             {
                 try
                 {
-                    ScriptSigning.SignFile(file, privateKey);
+                    ScriptSigning.SignFile(Resolve(file), privateKey);
                     Console.WriteLine($"Signed: {file}");
                 }
                 catch (Exception ex)
@@ -113,9 +113,10 @@ public static class SigningCommand
             var failures = 0;
             foreach (var file in files)
             {
-                var check = File.Exists(file)
-                    ? ScriptSigning.VerifyFile(file, key)
-                    : new SignatureCheck(SignatureFailure.Unreadable, "file not found");
+                var path = Resolve(file);
+                var check = File.Exists(path)
+                    ? ScriptSigning.VerifyFile(path, key)
+                    : new SignatureCheck(SignatureFailure.Unreadable, $"file not found at {path}");
                 if (check.IsValid)
                 {
                     Console.WriteLine($"Valid: {file}");
@@ -132,6 +133,13 @@ public static class SigningCommand
 
         return command;
     }
+
+    /// <summary>
+    /// A file argument as an absolute path, a relative one taken from the directory the command
+    /// was run in, so the result never depends on what the process later treats as current.
+    /// </summary>
+    internal static string Resolve(string file) =>
+        Path.GetFullPath(file, Environment.CurrentDirectory);
 
     /// <summary>startset generate-keypair. Prints a new public and private key.</summary>
     public static Command CreateGenerateKeypair()
