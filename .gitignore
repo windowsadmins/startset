@@ -2,7 +2,6 @@
 bin/
 obj/
 release/
-build/msi/obj
 payload/
 
 # IDE
