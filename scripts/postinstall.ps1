@@ -90,6 +90,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "icacls could not open $startsetDataDir\triggers to users (exit $LASTEXITCODE)" }
     Write-Host "  Writable by Administrators and SYSTEM only; users may create trigger files in triggers"
 
+    # The CLI was renamed from startset.exe to managedstatekeeper.exe. An upgrade never
+    # removes startset.exe because no current package owns it, so the old binary stays
+    # in the install folder and on PATH, and it predates script signing: it runs
+    # unsigned payloads that the service and managedstatekeeper.exe refuse.
+    $legacyCli = Join-Path $installDir "startset.exe"
+    if (Test-Path -Path $legacyCli) {
+        Remove-Item -Path $legacyCli -Force
+        Write-Host "  Removed legacy CLI: $legacyCli"
+    }
+
     # Start Menu shortcut for the GUI, Managed State Keeper.exe, for every user.
     $guiExecutable = Join-Path $installDir "Managed State Keeper.exe"
     if (Test-Path -Path $guiExecutable) {
