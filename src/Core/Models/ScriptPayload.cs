@@ -63,6 +63,13 @@ public class ScriptPayload
     public int SortOrder { get; set; }
 
     /// <summary>
+    /// Why the payload is refused under required script signing, or null when it is not.
+    /// A refused payload is reported as <see cref="Enums.ExecutionStatus.SignatureRejected"/>
+    /// rather than skipped.
+    /// </summary>
+    public string? SignatureRejection { get; set; }
+
+    /// <summary>
     /// Returns true if this is a PowerShell script.
     /// </summary>
     public bool IsPowerShell => Extension == ".ps1";

@@ -111,6 +111,17 @@ public class ExecutionResult
     };
 
     /// <summary>
+    /// Creates a result for a payload refused because its signature did not verify.
+    /// </summary>
+    public static ExecutionResult SignatureRejected(ScriptPayload script, string reason) => new()
+    {
+        Script = script,
+        Status = ExecutionStatus.SignatureRejected,
+        ErrorMessage = $"Refused: {reason}",
+        StartTime = DateTimeOffset.UtcNow
+    };
+
+    /// <summary>
     /// Creates a timeout result.
     /// </summary>
     public static ExecutionResult Timeout(ScriptPayload script, TimeSpan elapsed) => new()

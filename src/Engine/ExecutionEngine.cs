@@ -138,10 +138,11 @@ public class ExecutionEngine
         var failed = results.Count(r => r.Status == ExecutionStatus.Failed);
         var skipped = results.Count(r => r.Status == ExecutionStatus.Skipped);
         var deferred = results.Count(r => r.Status == ExecutionStatus.Deferred);
+        var refused = results.Count(r => r.Status == ExecutionStatus.SignatureRejected);
 
         StartSetLogger.Information(
-            "Execution complete: {Succeeded} succeeded, {Failed} failed, {Skipped} skipped, {Deferred} deferred",
-            succeeded, failed, skipped, deferred);
+            "Execution complete: {Succeeded} succeeded, {Failed} failed, {Skipped} skipped, {Deferred} deferred, {Refused} refused (signature)",
+            succeeded, failed, skipped, deferred, refused);
 
         // Say it twice, and plainly. A deferral means user-visible work did not
         // happen, and it is the line someone reading a log after a complaint
@@ -267,9 +268,9 @@ public class ExecutionEngine
             if (cancellationToken.IsCancellationRequested)
                 break;
 
-            if (DateTimeOffset.UtcNow >= batchDeadline && !script.ShouldSkip)
+            if (DateTimeOffset.UtcNow >= batchDeadline && !script.ShouldSkip && script.SignatureRejection is null)
             {
-                var remaining = ordered.Skip(index).Where(s => !s.ShouldSkip).ToList();
+                var remaining = ordered.Skip(index).Where(s => !s.ShouldSkip && s.SignatureRejection is null).ToList();
 
                 StartSetLogger.Warning(
                     "Login batch budget of {Budget}s is spent. Abandoning {Count} payload(s) so the session is not held any longer: {Names}. They run again at the next logon.",
@@ -289,7 +290,13 @@ public class ExecutionEngine
 
             ExecutionResult result;
 
-            if (script.ShouldSkip)
+            if (script.SignatureRejection is not null)
+            {
+                // Ahead of every skip: a refused payload must report as refused, not as
+                // "already ran" or anything else that reads as fine.
+                result = ExecutionResult.SignatureRejected(script, script.SignatureRejection);
+            }
+            else if (script.ShouldSkip)
             {
                 result = ExecutionResult.Skipped(script, script.SkipReason ?? "Unknown reason");
                 StartSetLogger.Debug("Skipping script: {Script} - {Reason}", script.FileName, script.SkipReason ?? "Unknown");
@@ -364,6 +371,16 @@ public class ExecutionEngine
         var prefs = _preferencesService.Preferences;
         var allowedExtensions = prefs.AllowedExtensions.Select(e => e.ToLowerInvariant()).ToHashSet();
 
+        // Script signing is on when policy sets a key. A key that does not decode does not
+        // turn signing off -- that would make a typo in policy, or a tampered value, an
+        // off switch -- it refuses everything until the policy is fixed.
+        var signingRequired = prefs.ManifestSigningKey is not null;
+        var signingKey = signingRequired ? ScriptSigning.ParsePublicKey(prefs.ManifestSigningKey) : null;
+        if (signingRequired && signingKey is null)
+        {
+            StartSetLogger.Error("Script signing is required but the ManifestSigningKey policy value is not a base64 Ed25519 public key. Every payload is refused until it is corrected");
+        }
+
         try
         {
             var files = Directory.GetFiles(directory)
@@ -405,6 +422,20 @@ public class ExecutionEngine
                         script.ShouldSkip = true;
                         script.SkipReason = $"Not run: {trust.Reason}. Payloads must be writable only by Administrators and SYSTEM";
                         StartSetLogger.Warning("Skipping {Script}: {Reason}", script.FileName, script.SkipReason);
+                    }
+
+                    if (signingRequired)
+                    {
+                        var check = ScriptSigning.VerifyFile(filePath, signingKey);
+                        if (!check.IsValid)
+                        {
+                            script.SignatureRejection = check.Describe();
+                            StartSetLogger.Error("Refusing {Script}: {Reason}", filePath, script.SignatureRejection);
+                        }
+                        else
+                        {
+                            StartSetLogger.Debug("Signature verified for {Script}", script.FileName);
+                        }
                     }
 
                     scripts.Add(script);
@@ -538,6 +569,7 @@ public class ExecutionEngine
                 ExecutionStatus.Success => "completed",
                 ExecutionStatus.Deferred => "deferred",
                 ExecutionStatus.Skipped => "skipped",
+                ExecutionStatus.SignatureRejected => "refused",
                 _ => "failed"
             },
             $"Exit code {result.ExitCode}",

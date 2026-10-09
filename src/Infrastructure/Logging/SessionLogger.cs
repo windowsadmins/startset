@@ -604,7 +604,9 @@ public class SessionLogger : IDisposable
             LastUpdate = nowUtc.ToString("o"),
             FailureCount = status == "Error" ? 1 : 0,
             Type = "startset",
-            ActionPerformed = acted ? (script.IsPackage ? "install" : "execute") : null
+            ActionPerformed = acted && result.Status != ExecutionStatus.SignatureRejected
+                ? (script.IsPackage ? "install" : "execute")
+                : null
         };
 
         if (status == "Error")

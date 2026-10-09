@@ -144,6 +144,8 @@ public class PreferencesService
             ?? throw new ArgumentException($"Unknown setting: {name}", nameof(name));
         if (IsManaged(setting.Name))
             throw new InvalidOperationException($"{setting.Name} is set by policy and cannot be changed here");
+        if (setting.PolicyOnly)
+            throw new InvalidOperationException($"{setting.Name} can only be set by policy");
         if (_machine is null)
             throw new InvalidOperationException("No machine settings store is available");
 

@@ -141,11 +141,11 @@ Disabled: off.
 
 Writes LogScriptOutput (REG_DWORD 1 or 0).</string>
       <string id="ManifestSigningKey">Manifest signing public key</string>
-      <string id="ManifestSigningKey_Help">The public key StartSet uses to verify signed script manifests: the base64 encoding of a raw 32-byte Ed25519 public key (44 characters).
+      <string id="ManifestSigningKey_Help">Requires every payload to be signed. The base64 encoding of a raw 32-byte Ed25519 public key (44 characters).
 
-StartSet reads this value from policy only. The same value in machine settings or Config.yaml is ignored, so only an administrator managing the device can choose which signer is trusted.
+While set, a script runs only if it carries a valid "# ed25519:" (.ps1) or "REM ed25519:" (.cmd, .bat) signature line made with the matching private key. Unsigned or modified scripts, executables and packages are refused and reported as errors, as is every payload when this value is not a valid key. The format is outset's, so one key can sign for macOS and Windows.
 
-This value is not shown on the Prefs tab of Managed State Keeper.
+StartSet reads this value from policy only. The same value in machine settings, Config.yaml or on the command line is ignored, so only an administrator managing the device can choose which signer is trusted. The Prefs tab of Managed State Keeper shows it as managed.
 
 Writes ManifestSigningKey (REG_SZ).</string>
     </stringTable>

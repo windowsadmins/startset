@@ -220,6 +220,21 @@ public class StartSetPreferences
     public List<string> Overrides { get; set; } = [];
 
     /// <summary>
+    /// Base64 Ed25519 public key (the raw 32 bytes). When set, StartSet runs only script
+    /// payloads that carry a valid embedded signature made with the matching private key,
+    /// and refuses every other payload -- unsigned or tampered scripts, and executables and
+    /// packages, which cannot carry one. Default: null (no signing required).
+    ///
+    /// Policy only. A key anyone with write access to machine settings or Config.yaml could
+    /// set would let them swap in their own key and sign their own payloads, so a value
+    /// from anywhere but policy is ignored. Same rule as outset's manifest_signing_key,
+    /// which is honoured only when MDM-managed.
+    /// </summary>
+    [PolicyOnly]
+    [YamlMember(Alias = "manifest_signing_key")]
+    public string? ManifestSigningKey { get; set; }
+
+    /// <summary>
     /// Returns default preferences.
     /// </summary>
     public static StartSetPreferences Default => new();

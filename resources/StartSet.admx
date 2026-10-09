@@ -18,8 +18,9 @@
   setting, add its policy to the matching category; a new Prefs group gets a new category
   under StartSet. A test fails while any setting lacks a policy here.
 
-  Security holds values StartSet reads from policy only (PolicyTemplateTests.PolicyOnlyValues),
-  which are not on the Prefs tab and are ignored in machine settings and Config.yaml.
+  Security holds values StartSet reads from policy only (PolicyTemplateTests.PolicyOnlyValues,
+  [PolicyOnly] in StartSetPreferences), which are ignored in machine settings, Config.yaml and on
+  the command line, and shown locked on the Prefs tab.
 -->
 <policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema"
                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
