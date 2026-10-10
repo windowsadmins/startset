@@ -93,11 +93,19 @@ try {
     # The CLI was renamed from startset.exe to managedstatekeeper.exe. An upgrade never
     # removes startset.exe because no current package owns it, so the old binary stays
     # in the install folder and on PATH, and it predates script signing: it runs
-    # unsigned payloads that the service and managedstatekeeper.exe refuse.
+    # unsigned payloads that the service and managedstatekeeper.exe refuse. Replace it
+    # with a symbolic link so the old name keeps working and runs the current CLI. A
+    # link rather than a hard link, because the MSI replaces managedstatekeeper.exe on
+    # upgrade and a hard link would keep pointing at the old copy.
     $legacyCli = Join-Path $installDir "startset.exe"
-    if (Test-Path -Path $legacyCli) {
-        Remove-Item -Path $legacyCli -Force
-        Write-Host "  Removed legacy CLI: $legacyCli"
+    $currentCli = Join-Path $installDir "managedstatekeeper.exe"
+    if (Test-Path -Path $currentCli) {
+        $existing = Get-Item -Path $legacyCli -Force -ErrorAction SilentlyContinue
+        if (-not $existing -or $existing.LinkTarget -ne $currentCli) {
+            if ($existing) { Remove-Item -Path $legacyCli -Force }
+            New-Item -ItemType SymbolicLink -Path $legacyCli -Target $currentCli | Out-Null
+            Write-Host "  startset.exe now links to $currentCli"
+        }
     }
 
     # Start Menu shortcut for the GUI, Managed State Keeper.exe, for every user.
