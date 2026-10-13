@@ -45,11 +45,11 @@ public class GuiSupportTests : IDisposable
     [Fact]
     public void Save_StartsTheAppElevated_ToApplyThePayload()
     {
-        var start = PrefsElevation.BuildElevatedApply(@"C:\Program Files\StartSet\Managed State Keeper.exe", @"C:\Temp\s.json");
+        var start = PrefsElevation.BuildElevatedApply(@"C:\Program Files\StartSet\Managed State Keeper.exe", "startset-settings-abc");
 
         start.Verb.Should().Be("runas");
         start.UseShellExecute.Should().BeTrue();
-        start.Arguments.Should().Be(@"--apply-settings ""C:\Temp\s.json""");
+        start.Arguments.Should().Be("--apply-settings startset-settings-abc");
         SettingsPayload.IsApplyRun(start.Arguments.Split(' ')).Should().BeTrue();
         start.WorkingDirectory.Should().Be(@"C:\Program Files\StartSet");
     }

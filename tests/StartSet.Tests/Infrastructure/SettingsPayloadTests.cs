@@ -84,18 +84,20 @@ public class SettingsPayloadTests : IDisposable
     }
 
     [Fact]
-    public void RunHeadless_WritesThePayloadFile_AndRereadsPolicy()
+    public async Task RunHeadless_ReadsThePipe_AndRereadsPolicy()
     {
         var policy = new InMemorySettingsStore().With("Verbose", 0);
         var machine = new InMemorySettingsStore();
-        var path = Path.Combine(_temp.Path, "payload.json");
-        File.WriteAllText(path, SettingsPayload.Serialize(new Dictionary<string, object>
+        var pipeName = SettingsPayload.NewPipeName();
+        using var pipe = SettingsPayload.CreatePipe(pipeName);
+        var send = SettingsPayload.SendAsync(pipe, new Dictionary<string, object>
         {
             ["Verbose"] = true,
             ["ScriptTimeout"] = 600,
-        }));
+        }, TimeSpan.FromSeconds(10));
 
-        var code = SettingsPayload.RunHeadless([SettingsPayload.ApplyArgument, path], () => TestSettings.Service(policy, machine));
+        var code = await Task.Run(() => SettingsPayload.RunHeadless([SettingsPayload.ApplyArgument, pipeName], () => TestSettings.Service(policy, machine)));
+        await send;
 
         code.Should().Be(SettingsPayload.ExitSuccess);
         machine.Values.Should().ContainKey("ScriptTimeout").WhoseValue.Should().Be(600);
@@ -105,13 +107,41 @@ public class SettingsPayloadTests : IDisposable
     [Fact]
     public void RunHeadless_FailsOnAMissingOrBadPayload()
     {
-        var bad = Path.Combine(_temp.Path, "bad.json");
-        File.WriteAllText(bad, "not json");
-
         SettingsPayload.RunHeadless([SettingsPayload.ApplyArgument], () => TestSettings.Service()).Should().Be(SettingsPayload.ExitBadPayload);
-        SettingsPayload.RunHeadless([SettingsPayload.ApplyArgument, Path.Combine(_temp.Path, "missing.json")], () => TestSettings.Service())
+        SettingsPayload.RunHeadless([SettingsPayload.ApplyArgument, "p"], () => TestSettings.Service(), _ => "not json")
             .Should().Be(SettingsPayload.ExitBadPayload);
-        SettingsPayload.RunHeadless([SettingsPayload.ApplyArgument, bad], () => TestSettings.Service()).Should().Be(SettingsPayload.ExitBadPayload);
+        SettingsPayload.RunHeadless([SettingsPayload.ApplyArgument, "p"], () => TestSettings.Service(), _ => throw new TimeoutException())
+            .Should().Be(SettingsPayload.ExitBadPayload);
+    }
+
+    [Fact]
+    public void Pipe_IsOpenOnlyToThisUser_Administrators_AndSystem()
+    {
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        var security = SettingsPayload.PipeSecurityFor(identity.User!);
+
+        security.AreAccessRulesProtected.Should().BeTrue("nothing may be inherited");
+        security.GetAccessRules(true, true, typeof(System.Security.Principal.SecurityIdentifier))
+            .Cast<System.IO.Pipes.PipeAccessRule>()
+            .Select(r => r.IdentityReference.Value)
+            .Should().BeEquivalentTo(identity.User!.Value, "S-1-5-32-544", "S-1-5-18");
+    }
+
+    [Fact]
+    public async Task Send_TimesOut_WhenNothingConnects()
+    {
+        using var pipe = SettingsPayload.CreatePipe(SettingsPayload.NewPipeName());
+        var send = () => SettingsPayload.SendAsync(pipe, new Dictionary<string, object>(), TimeSpan.FromMilliseconds(200));
+        await send.Should().ThrowAsync<TimeoutException>();
+    }
+
+    [Fact]
+    public void A_SecondPipe_WithTheSameName_IsRefused()
+    {
+        var name = SettingsPayload.NewPipeName();
+        using var first = SettingsPayload.CreatePipe(name);
+        var squat = () => SettingsPayload.CreatePipe(name);
+        squat.Should().Throw<Exception>();
     }
 
     [Fact]

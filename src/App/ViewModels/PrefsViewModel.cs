@@ -195,7 +195,7 @@ public partial class PrefsViewModel : ObservableObject
 
     /// <summary>
     /// Writes the pending edits to machine settings. An elevated process writes them itself;
-    /// otherwise this app's executable is started elevated with the edits in a temp file, and
+    /// otherwise this app's executable is started elevated and sent the edits over a pipe, and
     /// UAC asks for approval. A declined prompt keeps the edits pending.
     /// </summary>
     public async Task SaveAsync()
@@ -247,14 +247,23 @@ public partial class PrefsViewModel : ObservableObject
         if (string.IsNullOrEmpty(exe))
             return "Not saved: could not find the app's own executable.";
 
-        string? payload = null;
         try
         {
-            payload = SettingsPayload.WriteTempFile(values);
-            using var process = System.Diagnostics.Process.Start(PrefsElevation.BuildElevatedApply(exe, payload));
+            // The edits travel over a pipe only this user, Administrators and SYSTEM may open;
+            // nothing is written to disk.
+            var pipeName = SettingsPayload.NewPipeName();
+            using var pipe = SettingsPayload.CreatePipe(pipeName);
+            using var process = System.Diagnostics.Process.Start(PrefsElevation.BuildElevatedApply(exe, pipeName));
             if (process is null)
                 return "Not saved: the settings writer did not start.";
-            await process.WaitForExitAsync();
+
+            // A writer that exits before it connects must not leave Save waiting out the timeout.
+            var send = SettingsPayload.SendAsync(pipe, values, SettingsPayload.ConnectTimeout);
+            var exited = process.WaitForExitAsync();
+            if (await Task.WhenAny(send, exited) == send)
+                await send;
+
+            await exited;
             return process.ExitCode == SettingsPayload.ExitSuccess
                 ? null
                 : $"Not saved: {SettingsPayload.ExitCodeText(process.ExitCode)}.";
@@ -266,13 +275,6 @@ public partial class PrefsViewModel : ObservableObject
         catch (Exception ex)
         {
             return $"Not saved: {ex.Message}";
-        }
-        finally
-        {
-            if (payload is not null)
-            {
-                try { File.Delete(payload); } catch { }
-            }
         }
     }
 

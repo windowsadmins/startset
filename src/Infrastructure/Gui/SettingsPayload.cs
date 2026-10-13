@@ -1,3 +1,8 @@
+using System.IO.Pipes;
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using System.Text;
 using System.Text.Json;
 using StartSet.Infrastructure.Configuration;
 
@@ -10,11 +15,15 @@ public sealed record ApplyResult(IReadOnlyList<string> Written, IReadOnlyList<st
 /// The Prefs tab's unsaved edits, and how they reach machine settings.
 /// </summary>
 /// <remarks>
-/// A non-elevated app cannot write HKLM, so on Save it writes the edits to a JSON file in the
-/// user's temp folder and starts its own executable elevated with <see cref="ApplyArgument"/>
-/// and that file. The elevated run reads policy again, skips every setting policy sets, checks
-/// each value with the same rules the Prefs tab uses, writes the rest and exits with no window.
-/// An already elevated app calls <see cref="Apply"/> directly.
+/// A non-elevated app cannot write HKLM, so on Save it opens a named pipe with a random name,
+/// open only to this user, Administrators and SYSTEM, and starts its own executable elevated
+/// with <see cref="ApplyArgument"/> and the pipe's name. The edits go to the elevated run as
+/// JSON over the pipe and never touch disk, so a value meant to stay private is not left in a
+/// temp file; and a pipe, unlike data protected for the current user, also reaches an
+/// administrator who approves UAC under a different account. The elevated run reads policy
+/// again, skips every setting policy sets, checks each value with the same rules the Prefs
+/// tab uses, writes the rest and exits with no window. An already elevated app calls
+/// <see cref="Apply"/> directly.
 /// </remarks>
 public static class SettingsPayload
 {
@@ -142,12 +151,73 @@ public static class SettingsPayload
         _ => throw new InvalidDataException($"Unsupported value: {element.ValueKind}")
     };
 
-    /// <summary>Writes the edits to a new file in the user's temp folder and returns its path.</summary>
-    public static string WriteTempFile(IReadOnlyDictionary<string, object> values)
+    // ── Pipe ────────────────────────────────────────────────────
+
+    /// <summary>How long Save waits for the elevated run to connect, which covers the UAC prompt.</summary>
+    public static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>A pipe name nobody can guess ahead of time.</summary>
+    public static string NewPipeName() => $"startset-settings-{Guid.NewGuid():N}";
+
+    /// <summary>
+    /// The pipe's ACL: <paramref name="currentUser"/>, who creates it, and the two accounts the
+    /// elevated run can be -- Administrators and SYSTEM. Nobody else may open it.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    public static PipeSecurity PipeSecurityFor(SecurityIdentifier currentUser)
     {
-        var path = Path.Combine(Path.GetTempPath(), $"startset-settings-{Guid.NewGuid():N}.json");
-        File.WriteAllText(path, Serialize(values));
-        return path;
+        var security = new PipeSecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new PipeAccessRule(currentUser, PipeAccessRights.FullControl, AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), PipeAccessRights.ReadWrite, AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), PipeAccessRights.ReadWrite, AccessControlType.Allow));
+        return security;
+    }
+
+    /// <summary>
+    /// Creates the sending end of the pipe. FirstPipeInstance makes creation fail if anything
+    /// already holds the name, so the elevated run can only reach this app.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    public static NamedPipeServerStream CreatePipe(string pipeName)
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return NamedPipeServerStreamAcl.Create(
+            pipeName, PipeDirection.Out, maxNumberOfServerInstances: 1, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance, inBufferSize: 0, outBufferSize: 0,
+            PipeSecurityFor(identity.User!));
+    }
+
+    /// <summary>
+    /// Waits for the elevated run to connect, then writes the edits and closes the pipe.
+    /// Throws <see cref="TimeoutException"/> when nothing connects within <paramref name="timeout"/>.
+    /// </summary>
+    public static async Task SendAsync(NamedPipeServerStream pipe, IReadOnlyDictionary<string, object> values, TimeSpan timeout)
+    {
+        using var cancel = new CancellationTokenSource(timeout);
+        try
+        {
+            await pipe.WaitForConnectionAsync(cancel.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException("the elevated settings writer did not connect");
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(Serialize(values));
+        await pipe.WriteAsync(bytes);
+        await pipe.FlushAsync();
+        pipe.WaitForPipeDrain();
+        pipe.Disconnect();
+    }
+
+    /// <summary>The elevated run's end: connects to <paramref name="pipeName"/> and reads the JSON.</summary>
+    public static string ReceiveFromPipe(string pipeName, TimeSpan timeout)
+    {
+        using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.In);
+        pipe.Connect((int)timeout.TotalMilliseconds);
+        using var reader = new StreamReader(pipe, Encoding.UTF8);
+        return reader.ReadToEnd();
     }
 
     // ── Writing ─────────────────────────────────────────────────
@@ -176,11 +246,15 @@ public static class SettingsPayload
     }
 
     /// <summary>
-    /// The elevated, windowless half of Save: reads the payload named after
+    /// The elevated, windowless half of Save: reads the payload from the pipe named after
     /// <see cref="ApplyArgument"/>, writes it with the real policy and machine settings, and
-    /// returns the process exit code.
+    /// returns the process exit code. <paramref name="receive"/> and
+    /// <paramref name="serviceFactory"/> stand in for the pipe and registry in tests.
     /// </summary>
-    public static int RunHeadless(IReadOnlyList<string> args, Func<PreferencesService>? serviceFactory = null)
+    public static int RunHeadless(
+        IReadOnlyList<string> args,
+        Func<PreferencesService>? serviceFactory = null,
+        Func<string, string>? receive = null)
     {
         Dictionary<string, object> values;
         try
@@ -188,7 +262,8 @@ public static class SettingsPayload
             var index = args.ToList().FindIndex(a => string.Equals(a, ApplyArgument, StringComparison.OrdinalIgnoreCase));
             if (index < 0 || index + 1 >= args.Count)
                 return ExitBadPayload;
-            values = Deserialize(File.ReadAllText(args[index + 1]));
+            var pipeName = args[index + 1];
+            values = Deserialize(receive?.Invoke(pipeName) ?? ReceiveFromPipe(pipeName, TimeSpan.FromSeconds(10)));
         }
         catch (Exception)
         {

@@ -40,17 +40,17 @@ public static class PrefsElevation
     }
 
     /// <summary>
-    /// Start info that runs <paramref name="exePath"/> elevated to write the settings in
-    /// <paramref name="payloadPath"/> to machine settings, with no window.
+    /// Start info that runs <paramref name="exePath"/> elevated to write the settings it reads
+    /// from the pipe <paramref name="pipeName"/> to machine settings, with no window.
     /// </summary>
-    public static ProcessStartInfo BuildElevatedApply(string exePath, string payloadPath)
+    public static ProcessStartInfo BuildElevatedApply(string exePath, string pipeName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(exePath);
-        ArgumentException.ThrowIfNullOrWhiteSpace(payloadPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
         return new ProcessStartInfo
         {
             FileName = exePath,
-            Arguments = $"{SettingsPayload.ApplyArgument} \"{payloadPath}\"",
+            Arguments = $"{SettingsPayload.ApplyArgument} {pipeName}",
             UseShellExecute = true,
             Verb = "runas",
             WorkingDirectory = Path.GetDirectoryName(exePath) ?? string.Empty,
