@@ -28,6 +28,8 @@
          generates resources.pri with makepri.exe from the Windows SDK instead. -->
     <EnableCoreMrtTooling>false</EnableCoreMrtTooling>
     <NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
+    <!-- Program.cs is the entry point, so a headless settings write never starts WinUI. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using StartSet.App.ViewModels;
 using StartSet.Infrastructure.Configuration;
+using StartSet.Infrastructure.Gui;
 
 namespace StartSet.App.Views;
 
@@ -30,21 +31,33 @@ public sealed partial class PrefsPage : Page
                 : (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
             SaveStatus.Visibility = Visibility.Visible;
         });
+        ViewModel.Reloaded += BuildCards;
+
+        // An elevated app saves without a UAC prompt, so its Save button carries no shield.
+        SaveShield.Visibility = ViewModel.IsElevated ? Visibility.Collapsed : Visibility.Visible;
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
-        ViewModel.Load();
-        BuildCards();
+        // Coming back to the cached page keeps unsaved edits; otherwise read the settings again.
+        if (!ViewModel.HasPendingChanges)
+            ViewModel.Load();
+        _ = ViewModel.RefreshServicesAsync();
     }
 
-    private void UnlockButton_Click(object sender, RoutedEventArgs e)
+    private void RefreshServices_Click(object sender, RoutedEventArgs e) => _ = ViewModel.RefreshServicesAsync();
+
+    private async void Save_Click(object sender, RoutedEventArgs e)
     {
-        // Once the elevated copy has started (UAC accepted), this read-only instance closes.
-        // A cancelled UAC prompt returns false and the tab simply stays read-only.
-        if (ViewModel.TryRelaunchElevated())
-            Application.Current.Exit();
+        SaveStatus.Visibility = Visibility.Collapsed;
+        await ViewModel.SaveAsync();
+    }
+
+    private void Discard_Click(object sender, RoutedEventArgs e)
+    {
+        SaveStatus.Visibility = Visibility.Collapsed;
+        ViewModel.Discard();
     }
 
     // ── Card construction ───────────────────────────────────────
@@ -126,35 +139,22 @@ public sealed partial class PrefsPage : Page
         control.IsEnabled = item.CanEdit;
         control.VerticalAlignment = VerticalAlignment.Center;
         ToolTipService.SetToolTip(control, item.IsManaged
-            ? $"Set by policy (HKLM\\SOFTWARE\\Policies\\StartSet\\{item.Name})"
+            ? $"HKLM\\SOFTWARE\\Policies\\StartSet\\{item.Name}"
             : item.Name);
         Grid.SetColumn(control, 1);
         grid.Children.Add(control);
         return grid;
     }
 
-    /// <summary>The value's source, with a lock when policy sets it.</summary>
-    private static StackPanel SourceCaption(SettingItem item)
+    /// <summary>The value's source. Empty, and collapsed, when policy sets it.</summary>
+    private static TextBlock SourceCaption(SettingItem item) => new()
     {
-        var secondary = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"];
-        var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(0, 2, 0, 0) };
-        if (item.IsManaged)
-        {
-            caption.Children.Add(new FontIcon
-            {
-                Glyph = "",
-                FontSize = 12,
-                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
-            });
-        }
-        caption.Children.Add(new TextBlock
-        {
-            Text = item.SourceText,
-            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
-            Foreground = item.IsManaged ? (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] : secondary
-        });
-        return caption;
-    }
+        Text = item.SourceText,
+        Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+        Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+        Margin = new Thickness(0, 2, 0, 0),
+        Visibility = string.IsNullOrEmpty(item.SourceText) ? Visibility.Collapsed : Visibility.Visible
+    };
 
     private Control Editor(SettingItem item)
     {
@@ -163,7 +163,7 @@ public sealed partial class PrefsPage : Page
             case SettingKind.Toggle:
             {
                 var toggle = new ToggleSwitch { IsOn = item.BoolValue, OnContent = "On", OffContent = "Off", HorizontalAlignment = HorizontalAlignment.Right };
-                toggle.Toggled += (_, _) => ViewModel.QueueSave(item, toggle.IsOn);
+                toggle.Toggled += (_, _) => ViewModel.SetPending(item, toggle.IsOn);
                 return toggle;
             }
             case SettingKind.Number:
@@ -175,17 +175,17 @@ public sealed partial class PrefsPage : Page
                     SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
                     PlaceholderText = item.Description.Unit ?? string.Empty
                 };
-                number.ValueChanged += (_, args) => ViewModel.QueueSave(item, args.NewValue);
+                number.ValueChanged += (_, args) => ViewModel.SetPending(item, args.NewValue);
                 return number;
             }
             case SettingKind.Choice:
             {
                 var combo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
-                foreach (var level in PrefsViewModel.LogLevels)
+                foreach (var level in SettingsPayload.LogLevels)
                     combo.Items.Add(level.Length == 0 ? "(not set)" : level);
-                var index = Array.FindIndex(PrefsViewModel.LogLevels, l => string.Equals(l, item.TextValue, StringComparison.OrdinalIgnoreCase));
+                var index = Array.FindIndex(SettingsPayload.LogLevels, l => string.Equals(l, item.TextValue, StringComparison.OrdinalIgnoreCase));
                 combo.SelectedIndex = Math.Max(0, index);
-                combo.SelectionChanged += (_, _) => ViewModel.QueueSave(item, PrefsViewModel.LogLevels[Math.Max(0, combo.SelectedIndex)]);
+                combo.SelectionChanged += (_, _) => ViewModel.SetPending(item, SettingsPayload.LogLevels[Math.Max(0, combo.SelectedIndex)]);
                 return combo;
             }
             case SettingKind.List:
@@ -200,13 +200,13 @@ public sealed partial class PrefsPage : Page
                     PlaceholderText = "None"
                 };
                 ScrollViewer.SetVerticalScrollBarVisibility(box, ScrollBarVisibility.Auto);
-                box.TextChanged += (_, _) => ViewModel.QueueSave(item, box.Text);
+                box.TextChanged += (_, _) => ViewModel.SetPending(item, box.Text);
                 return box;
             }
             default:
             {
                 var box = new TextBox { Text = item.TextValue };
-                box.TextChanged += (_, _) => ViewModel.QueueSave(item, box.Text);
+                box.TextChanged += (_, _) => ViewModel.SetPending(item, box.Text);
                 return box;
             }
         }
