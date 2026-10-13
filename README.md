@@ -119,7 +119,7 @@ Each setting is read from the first of these that sets it:
 
 1. A one-off flag for this run (`--verbose`, `--debug`).
 2. Policy: `HKLM\SOFTWARE\Policies\StartSet`, for Group Policy or MDM.
-3. Machine settings: `HKLM\SOFTWARE\StartSet\Settings`, written by `managedstatekeeper add-ignored-user` and the other settings commands, or by an administrator.
+3. Machine settings: `HKLM\SOFTWARE\StartSet\Settings`, written by `managedstatekeeper add-ignored-user` and the other settings commands, or from the Prefs tab in Managed State Keeper, which asks for administrator approval when you save.
 4. The legacy `C:\ProgramData\ManagedState\Config.yaml`.
 5. The built-in default.
 
@@ -150,7 +150,7 @@ Every setting except `ManifestSigningKey`, which only policy can set, can be set
 | `Overrides` | `overrides` | empty |
 | `ManifestSigningKey` | policy only | unset; see [Script Signing](#script-signing) |
 
-`resources/StartSet.admx` with `resources/en-US/StartSet.adml` is an administrative template for every setting above, for Group Policy (copy them to `C:\Windows\PolicyDefinitions` or the central store) or Intune (Imported Administrative templates). Each policy writes the value of the same name under `HKLM\SOFTWARE\Policies\StartSet`, and Managed State Keeper shows it as managed by policy and locks the field. The template's Security category also carries `ManifestSigningKey`, which StartSet reads from policy only and does not show on the Prefs tab.
+`resources/StartSet.admx` with `resources/en-US/StartSet.adml` is an administrative template for every setting above, for Group Policy (copy them to `C:\Windows\PolicyDefinitions` or the central store) or Intune (Imported Administrative templates). Each policy writes the value of the same name under `HKLM\SOFTWARE\Policies\StartSet`, and Managed State Keeper shows that field grayed out, under one line saying gray settings are configured by a policy. The template's Security category also carries `ManifestSigningKey`, which StartSet reads from policy only and does not show on the Prefs tab.
 
 To set a timeout by policy without the template:
 

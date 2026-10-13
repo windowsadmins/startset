@@ -32,24 +32,25 @@ public class GuiSupportTests : IDisposable
             .Should().OnlyContain(group => SettingDescriptions.Groups.Contains(group));
     }
 
-    [Theory]
-    [InlineData(false, false, false)]
-    [InlineData(false, true, false)]
-    [InlineData(true, true, false)]
-    [InlineData(true, false, true)]
-    public void A_Setting_IsEditable_OnlyElevated_AndNotManaged(bool elevated, bool managed, bool expected)
+    [Fact]
+    public void A_ManagedSetting_IsNotEditable() => PrefsElevation.CanEdit(isPolicyManaged: true).Should().BeFalse();
+
+    [Fact]
+    public void An_UnmanagedSetting_IsEditable_WithoutElevation()
     {
-        PrefsElevation.CanEdit(elevated, managed).Should().Be(expected);
+        // Editability no longer depends on elevation: UAC is asked for at Save.
+        PrefsElevation.CanEdit(isPolicyManaged: false).Should().BeTrue();
     }
 
     [Fact]
-    public void Unlock_RelaunchesElevated_OnThePrefsTab()
+    public void Save_StartsTheAppElevated_ToApplyThePayload()
     {
-        var start = PrefsElevation.BuildElevatedRelaunch(@"C:\Program Files\StartSet\Managed State Keeper.exe");
+        var start = PrefsElevation.BuildElevatedApply(@"C:\Program Files\StartSet\Managed State Keeper.exe", @"C:\Temp\s.json");
 
         start.Verb.Should().Be("runas");
         start.UseShellExecute.Should().BeTrue();
-        PrefsElevation.OpensOnPrefs([start.Arguments]).Should().BeTrue();
+        start.Arguments.Should().Be(@"--apply-settings ""C:\Temp\s.json""");
+        SettingsPayload.IsApplyRun(start.Arguments.Split(' ')).Should().BeTrue();
         start.WorkingDirectory.Should().Be(@"C:\Program Files\StartSet");
     }
 
