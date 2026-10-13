@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using StartSet.Infrastructure.Configuration;
 using StartSet.Infrastructure.Gui;
@@ -23,10 +24,14 @@ public sealed class SettingItem
     public string Name => Setting.Name;
     public bool IsManaged => Source == SettingSource.Policy;
 
-    /// <summary>Where the shown value comes from, as the caption under the control says it.</summary>
+    /// <summary>
+    /// Where the shown value comes from, as the caption under the control says it. A value set
+    /// by policy has no caption: its control is grayed out, and one line at the top of the tab
+    /// says what gray means.
+    /// </summary>
     public string SourceText => Source switch
     {
-        SettingSource.Policy => "Managed by policy",
+        SettingSource.Policy => "",
         SettingSource.MachineSettings => "Machine setting",
         SettingSource.LegacyFile => "From Config.yaml",
         SettingSource.CommandLine => "Command line",
@@ -78,6 +83,23 @@ public partial class PrefsViewModel : ObservableObject
 
     public int ManagedCount => Items.Count(i => i.IsManaged);
 
+    /// <summary>True when policy sets at least one value, which shows the policy line at the top.</summary>
+    public bool HasPolicySettings => ManagedCount > 0;
+
+    // ── Services ─────────────────────────────────────────────────
+
+    /// <summary>The installer's services and scheduled tasks, for the read-only Services card.</summary>
+    public ObservableCollection<FootprintStatus> Services { get; } = [];
+
+    /// <summary>Queries the services off the UI thread and replaces the card's rows.</summary>
+    public async Task RefreshServicesAsync()
+    {
+        var rows = await Task.Run(InstalledServices.Query);
+        Services.Clear();
+        foreach (var row in rows)
+            Services.Add(row);
+    }
+
     public string VersionDisplay
     {
         get
@@ -112,6 +134,7 @@ public partial class PrefsViewModel : ObservableObject
 
         OnPropertyChanged(nameof(Items));
         OnPropertyChanged(nameof(ManagedCount));
+        OnPropertyChanged(nameof(HasPolicySettings));
     }
 
     private static SettingKind KindOf(PreferenceSetting setting)

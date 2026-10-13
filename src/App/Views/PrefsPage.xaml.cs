@@ -37,7 +37,10 @@ public sealed partial class PrefsPage : Page
         base.OnNavigatedTo(e);
         ViewModel.Load();
         BuildCards();
+        _ = ViewModel.RefreshServicesAsync();
     }
+
+    private void RefreshServices_Click(object sender, RoutedEventArgs e) => _ = ViewModel.RefreshServicesAsync();
 
     private void UnlockButton_Click(object sender, RoutedEventArgs e)
     {
@@ -126,35 +129,22 @@ public sealed partial class PrefsPage : Page
         control.IsEnabled = item.CanEdit;
         control.VerticalAlignment = VerticalAlignment.Center;
         ToolTipService.SetToolTip(control, item.IsManaged
-            ? $"Set by policy (HKLM\\SOFTWARE\\Policies\\StartSet\\{item.Name})"
+            ? $"HKLM\\SOFTWARE\\Policies\\StartSet\\{item.Name}"
             : item.Name);
         Grid.SetColumn(control, 1);
         grid.Children.Add(control);
         return grid;
     }
 
-    /// <summary>The value's source, with a lock when policy sets it.</summary>
-    private static StackPanel SourceCaption(SettingItem item)
+    /// <summary>The value's source. Empty, and collapsed, when policy sets it.</summary>
+    private static TextBlock SourceCaption(SettingItem item) => new()
     {
-        var secondary = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"];
-        var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(0, 2, 0, 0) };
-        if (item.IsManaged)
-        {
-            caption.Children.Add(new FontIcon
-            {
-                Glyph = "",
-                FontSize = 12,
-                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
-            });
-        }
-        caption.Children.Add(new TextBlock
-        {
-            Text = item.SourceText,
-            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
-            Foreground = item.IsManaged ? (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] : secondary
-        });
-        return caption;
-    }
+        Text = item.SourceText,
+        Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+        Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+        Margin = new Thickness(0, 2, 0, 0),
+        Visibility = string.IsNullOrEmpty(item.SourceText) ? Visibility.Collapsed : Visibility.Visible
+    };
 
     private Control Editor(SettingItem item)
     {
