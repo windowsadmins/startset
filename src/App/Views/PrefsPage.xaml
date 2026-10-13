@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:gui="using:StartSet.Infrastructure.Gui"
+    xmlns:cvt="using:StartSet.App.Converters"
     NavigationCacheMode="Required">
 
     <ScrollViewer Padding="28,24,28,24">
@@ -98,44 +99,49 @@
                         </Button>
                     </Grid>
 
-                    <Grid ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="100" />
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="220" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Name" Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                        <TextBlock Grid.Column="1" Text="State" Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                        <TextBlock Grid.Column="2" Text="Last result" Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                        <TextBlock Grid.Column="3" Text="Starts" Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                    </Grid>
-
                     <ItemsControl ItemsSource="{x:Bind ViewModel.Services}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="gui:FootprintStatus">
-                                <Grid ColumnSpacing="16" Padding="0,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="100" />
-                                        <ColumnDefinition Width="120" />
-                                        <ColumnDefinition Width="220" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="2" ToolTipService.ToolTip="{x:Bind Description}">
-                                        <TextBlock Text="{x:Bind FriendlyName}" TextWrapping="WrapWholeWords" />
-                                        <TextBlock Text="{x:Bind NameAndKind}" Style="{StaticResource CaptionTextBlockStyle}"
-                                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="{x:Bind State}" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="2" Text="{x:Bind LastResult}" VerticalAlignment="Center" TextWrapping="WrapWholeWords"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                    <TextBlock Grid.Column="3" Text="{x:Bind Trigger}" VerticalAlignment="Center" TextWrapping="WrapWholeWords"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                </Grid>
+                                <!-- The Expander's header is a ToggleButton that spans the row, so a click
+                                     anywhere on it, or Space or Enter, opens and closes the row. -->
+                                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,4">
+                                    <Expander.Header>
+                                        <Grid ColumnSpacing="16" Padding="0,6" ToolTipService.ToolTip="{x:Bind Description}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="{x:Bind FriendlyName}" Style="{StaticResource BodyStrongTextBlockStyle}"
+                                                           TextWrapping="WrapWholeWords" />
+                                                <TextBlock Text="{x:Bind Summary}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                <Ellipse Width="10" Height="10" VerticalAlignment="Center"
+                                                         Fill="{x:Bind cvt:ServiceStateBrush.For(State)}" />
+                                                <TextBlock Text="{x:Bind State}" Style="{StaticResource CaptionTextBlockStyle}"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Expander.Header>
+                                    <ItemsControl ItemsSource="{x:Bind Details}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="gui:FootprintDetail">
+                                                <Grid ColumnSpacing="16" Padding="0,3">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="160" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{x:Bind Label}"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Grid.Column="1" Text="{x:Bind Value}"
+                                                               IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Expander>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
