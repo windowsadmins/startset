@@ -90,6 +90,63 @@ public class LoginGateTests
         Assert.Null(gate.Claim("alice", 1, "alice", SignedIn));
     }
 
+    private const string AliceSid = "S-1-12-1-1111111111-2222222222-3333333333-4444444444";
+    private const string HelpdeskSid = "S-1-12-1-5555555555-6666666666-7777777777-8888888888";
+
+    [Fact]
+    public void AnEntraSignInNamedByUpnMatchesTheSessionBySid()
+    {
+        var gate = new LoginGate();
+
+        Assert.Null(gate.Claim("alice@contoso.example", 1, "alice", SignedIn, AliceSid, AliceSid));
+    }
+
+    [Fact]
+    public void ADifferentSidIsAnotherAccountEvenWhenTheNamesMatch()
+    {
+        var gate = new LoginGate();
+
+        Assert.NotNull(gate.Claim("alice", 1, "alice", SignedIn, HelpdeskSid, AliceSid));
+        Assert.NotNull(gate.Claim("helpdesk@contoso.example", 1, "alice", SignedIn, HelpdeskSid, AliceSid));
+        Assert.Null(gate.Claim("alice@contoso.example", 1, "alice", SignedIn, AliceSid, AliceSid));
+    }
+
+    [Theory]
+    [InlineData("alice@contoso.example")]
+    [InlineData(@"AzureAD\alice")]
+    [InlineData(@"AzureAD\alice@contoso.example")]
+    [InlineData(@"CONTOSO\Alice")]
+    public void WithoutASidTheNamesAreComparedWithoutDomainOrUpnSuffix(string logonUser)
+    {
+        Assert.Null(new LoginGate().Claim(logonUser, 1, "alice", SignedIn, null, AliceSid));
+        Assert.Null(new LoginGate().Claim(logonUser, 1, @"AzureAD\alice", SignedIn, AliceSid, null));
+    }
+
+    [Fact]
+    public void WithoutASidAnotherNameIsStillAnotherAccount()
+    {
+        Assert.NotNull(new LoginGate().Claim("helpdesk@contoso.example", 1, "alice", SignedIn, HelpdeskSid, null));
+    }
+
+    [Fact]
+    public void TheCatchUpAndALaterEventForTheSameSignInRunTheBatchOnce()
+    {
+        var gate = new LoginGate();
+
+        Assert.Null(gate.Claim(null, 1, "alice", SignedIn, null, AliceSid));
+        Assert.NotNull(gate.Claim("alice@contoso.example", 1, "alice", SignedIn, AliceSid, AliceSid));
+    }
+
+    [Fact]
+    public void TheSessionSidNeedsSystemToRead()
+    {
+        if (new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null)))
+            return;
+
+        Assert.Null(ShellReadiness.GetSessionUserSid(Process.GetCurrentProcess().SessionId));
+        Assert.Null(ShellReadiness.GetSessionUserSid(0));
+    }
+
     [Fact]
     public void ASessionNobodyIsSignedInToIsNotASignIn()
     {
