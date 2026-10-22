@@ -174,7 +174,45 @@ public static class ShellReadiness
         }
     }
 
+    /// <summary>
+    /// The SID of the user signed in to <paramref name="sessionId"/>, or null when it
+    /// cannot be read.
+    /// </summary>
+    /// <remarks>
+    /// The session's user name is not enough to tell whether a logon event belongs to
+    /// the person at the desktop: an Entra ID sign-in is named by its UPN in the event
+    /// and by its short name in the session. The SID is the same on both sides.
+    ///
+    /// WTSQueryUserToken needs SeTcbPrivilege, which the service has as SYSTEM. Anywhere
+    /// else -- a test run, the CLI -- this returns null and the caller falls back to
+    /// comparing names.
+    /// </remarks>
+    public static string? GetSessionUserSid(int sessionId)
+    {
+        if (sessionId <= 0)
+            return null;
+
+        try
+        {
+            if (!WTSQueryUserToken(sessionId, out var token))
+                return null;
+
+            using (token)
+            using (var identity = new System.Security.Principal.WindowsIdentity(token.DangerousGetHandle()))
+            {
+                return identity.User?.Value;
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private const int WtsUserName = 5;
+
+    [System.Runtime.InteropServices.DllImport("wtsapi32.dll", SetLastError = true)]
+    private static extern bool WTSQueryUserToken(int sessionId, out Microsoft.Win32.SafeHandles.SafeAccessTokenHandle token);
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern uint WTSGetActiveConsoleSessionId();

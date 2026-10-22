@@ -96,6 +96,7 @@ public class LogonEventWorker : BackgroundService
             var record = e.EventRecord;
             var username = GetEventDataValue(record, "TargetUserName");
             var domain = GetEventDataValue(record, "TargetDomainName");
+            var userSid = GetEventDataValue(record, "TargetUserSid");
             var logonType = GetEventDataValue(record, "LogonType");
 
             // Skip system accounts
@@ -122,7 +123,7 @@ public class LogonEventWorker : BackgroundService
             Volatile.Write(ref _observedLogon, 1);
 
             var sessionId = logonSessionId >= 0 ? logonSessionId : GetActiveConsoleSession();
-            await RunLoginPayloadsAsync(username, username, sessionId, CancellationToken.None);
+            await RunLoginPayloadsAsync(username, username, userSid, sessionId, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -141,7 +142,8 @@ public class LogonEventWorker : BackgroundService
     /// one path and miss the other.
     /// </remarks>
     /// <param name="logonUser">The account the logon event names, or null for the catch-up.</param>
-    private async Task RunLoginPayloadsAsync(string? username, string? logonUser, int sessionId, CancellationToken stoppingToken)
+    /// <param name="logonUserSid">The SID the logon event names, or null for the catch-up.</param>
+    private async Task RunLoginPayloadsAsync(string? username, string? logonUser, string? logonUserSid, int sessionId, CancellationToken stoppingToken)
     {
         try
         {
@@ -176,7 +178,13 @@ public class LogonEventWorker : BackgroundService
             // Checked after the desktop wait: until then the session may not show who
             // signed in to it yet.
             var sessionUser = ShellReadiness.GetSessionUserName(sessionId);
-            var notASignIn = _loginGate.Claim(logonUser, sessionId, sessionUser, LogonSessions.GetSessionLogonTime(sessionId));
+            var notASignIn = _loginGate.Claim(
+                logonUser,
+                sessionId,
+                sessionUser,
+                LogonSessions.GetSessionLogonTime(sessionId),
+                logonUserSid,
+                ShellReadiness.GetSessionUserSid(sessionId));
             if (notASignIn != null)
             {
                 StartSetLogger.Debug("Not running login payloads for {User}: {Reason}", logonUser ?? username ?? "Unknown", notASignIn);
@@ -316,7 +324,7 @@ public class LogonEventWorker : BackgroundService
 
             Volatile.Write(ref _observedLogon, 1);
 
-            await RunLoginPayloadsAsync(username, null, sessionId, stoppingToken);
+            await RunLoginPayloadsAsync(username, null, null, sessionId, stoppingToken);
         }
         catch (OperationCanceledException)
         {
@@ -377,6 +385,7 @@ public class LogonEventWorker : BackgroundService
             // TargetUserSid, TargetUserName, TargetDomainName, TargetLogonId, LogonType...
             return name switch
             {
+                "TargetUserSid" => properties.Count > 4 ? properties[4].Value?.ToString() : null,
                 "TargetUserName" => properties.Count > 5 ? properties[5].Value?.ToString() : null,
                 "TargetDomainName" => properties.Count > 6 ? properties[6].Value?.ToString() : null,
                 "TargetLogonId" => properties.Count > 7 ? properties[7].Value?.ToString() : null,
