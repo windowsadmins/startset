@@ -84,12 +84,14 @@ public class ExecutionEngine
     /// <param name="username">Username for run-once tracking (null for system)</param>
     /// <param name="waitForNetwork">Whether to wait for network connectivity</param>
     /// <param name="cancellationToken">Cancellation token</param>
+    /// <param name="sessionId">Desktop session that triggered this batch; null selects the console.</param>
     /// <returns>List of execution results</returns>
     public async Task<List<ExecutionResult>> ExecuteAsync(
         PayloadType[] payloadTypes,
         string? username = null,
         bool? waitForNetwork = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? sessionId = null)
     {
         var results = new List<ExecutionResult>();
         var prefs = _preferencesService.Preferences;
@@ -129,7 +131,7 @@ public class ExecutionEngine
             if (cancellationToken.IsCancellationRequested)
                 break;
 
-            var payloadResults = await ExecutePayloadTypeAsync(payloadType, username, cancellationToken);
+            var payloadResults = await ExecutePayloadTypeAsync(payloadType, username, cancellationToken, sessionId);
             results.AddRange(payloadResults);
         }
 
@@ -150,7 +152,7 @@ public class ExecutionEngine
         if (deferred > 0)
         {
             StartSetLogger.Warning(
-                "{Deferred} payload(s) did not run because the console user's session could not be reached. " +
+                "{Deferred} payload(s) did not run because the target user's session could not be reached. " +
                 "Their settings have NOT been applied.",
                 deferred);
         }
@@ -179,7 +181,8 @@ public class ExecutionEngine
     private async Task<List<ExecutionResult>> ExecutePayloadTypeAsync(
         PayloadType payloadType,
         string? username,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? targetSessionId)
     {
         var results = new List<ExecutionResult>();
         var prefs = _preferencesService.Preferences;
@@ -252,8 +255,10 @@ public class ExecutionEngine
         // "Nothing was logged" is precisely how this class of failure hid for so
         // long, and a payload that did not run should say so.
         // Session the payloads will run in. Used to confirm the desktop is up
-        // before each one; -1 when there is no console session to check.
-        var sessionId = ShellReadiness.GetActiveConsoleSessionId();
+        // before each one. Resolve the console only for callers without a target.
+        var sessionId = payloadType.IsUserContext()
+            ? targetSessionId ?? ShellReadiness.GetActiveConsoleSessionId()
+            : (int?)null;
 
         var batchDeadline = payloadType.IsUserContext()
             ? DateTimeOffset.UtcNow.AddSeconds(prefs.LoginBatchBudget)
@@ -317,16 +322,16 @@ public class ExecutionEngine
                 // Waiting once at the start of the batch does not survive that. The
                 // check is a process lookup, so paying it per payload costs
                 // nothing when the shell is healthy.
-                if (payloadType.IsUserContext() && sessionId >= 0)
+                if (payloadType.IsUserContext() && sessionId > 0)
                 {
                     await ShellReadiness.WaitForDesktopAsync(
-                        sessionId,
+                        sessionId.Value,
                         TimeSpan.FromSeconds(prefs.ShellReadyTimeout),
                         TimeSpan.FromSeconds(prefs.ShellSettleDelay),
                         cancellationToken).ConfigureAwait(false);
                 }
 
-                result = await ExecuteScriptAsync(script, timeout, cancellationToken);
+                result = await ExecuteScriptAsync(script, timeout, cancellationToken, sessionId);
 
                 // Write per-script output log if enabled
                 if (prefs.LogScriptOutput)
@@ -460,7 +465,8 @@ public class ExecutionEngine
     private async Task<ExecutionResult> ExecuteScriptAsync(
         ScriptPayload script,
         TimeSpan timeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? sessionId)
     {
         // Find appropriate processor
         var processor = _processors.FirstOrDefault(p => p.CanProcess(script));
@@ -477,7 +483,7 @@ public class ExecutionEngine
             };
         }
 
-        return await processor.ExecuteAsync(script, timeout, cancellationToken);
+        return await processor.ExecuteAsync(script, timeout, cancellationToken, sessionId);
     }
 
     /// <summary>

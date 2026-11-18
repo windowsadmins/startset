@@ -21,7 +21,8 @@ public class PackageProcessor : IScriptProcessor
     public async Task<ExecutionResult> ExecuteAsync(
         ScriptPayload script,
         TimeSpan timeout,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? sessionId = null)
     {
         return script.Extension switch
         {

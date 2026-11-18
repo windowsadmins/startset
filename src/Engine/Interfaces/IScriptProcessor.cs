@@ -26,9 +26,11 @@ public interface IScriptProcessor
     /// <param name="script">Script to execute</param>
     /// <param name="timeout">Execution timeout</param>
     /// <param name="cancellationToken">Cancellation token</param>
+    /// <param name="sessionId">Target desktop session for user payloads; null selects the console.</param>
     /// <returns>Execution result</returns>
     Task<ExecutionResult> ExecuteAsync(
         ScriptPayload script,
         TimeSpan timeout,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        int? sessionId = null);
 }

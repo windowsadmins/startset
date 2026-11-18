@@ -21,7 +21,8 @@ public class BatchProcessor : IScriptProcessor
     public async Task<ExecutionResult> ExecuteAsync(
         ScriptPayload script,
         TimeSpan timeout,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? sessionId = null)
     {
         var result = new ExecutionResult
         {
@@ -40,8 +41,8 @@ public class BatchProcessor : IScriptProcessor
             // signed-in user or it does not run. This gate was missing here
             // entirely, so batch and executable payloads in the login directories
             // ran as SYSTEM in session 0 with nothing reporting it.
-            var userContext = UserContextExecution.TryRunAsConsoleUser(
-                script, "cmd.exe", $"/c \"{script.FilePath}\"", workingDirectory, timeout, result.StartTime);
+            var userContext = UserContextExecution.TryRunAsUser(
+                script, "cmd.exe", $"/c \"{script.FilePath}\"", workingDirectory, timeout, result.StartTime, sessionId);
             if (userContext is not null)
                 return userContext;
 

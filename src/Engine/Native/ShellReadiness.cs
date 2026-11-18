@@ -120,8 +120,7 @@ public static class ShellReadiness
 
     /// <summary>
     /// The session currently attached to the console, or -1 when none is.
-    /// These are single-seat lab machines, so the console session is the user's
-    /// session.
+    /// Remote Desktop sessions have their own IDs and must be selected explicitly.
     /// </summary>
     public static int GetActiveConsoleSessionId()
     {

@@ -7,7 +7,7 @@ using StartSet.Infrastructure.Logging;
 namespace StartSet.Engine.Native;
 
 /// <summary>
-/// Launches a process in the interactive console session, running as the user who
+/// Launches a process in the selected interactive session, running as the user who
 /// is signed in there, and captures its output.
 ///
 /// StartSet runs as a LocalSystem service, so a plain Process.Start() child also
@@ -19,7 +19,7 @@ namespace StartSet.Engine.Native;
 /// silently exit 0.
 ///
 /// The sequence is the standard one for a service launching into a user session:
-/// find the active console session, borrow its user token, build that user's
+/// select the target desktop session, borrow its user token, build that user's
 /// environment, and CreateProcessAsUser onto their desktop.
 /// </summary>
 public static class UserSessionLauncher
@@ -33,7 +33,7 @@ public static class UserSessionLauncher
         string? FailureReason);
 
     /// <summary>
-    /// True when there is an interactive console session with a user signed in.
+    /// True when the physical console session has a user signed in.
     /// Callers use this to decide whether user-context execution is possible at
     /// all before attempting it.
     /// </summary>
@@ -41,47 +41,20 @@ public static class UserSessionLauncher
     {
         var sessionId = WTSGetActiveConsoleSessionId();
         if (sessionId == 0xFFFFFFFF) return false;
-        if (!WTSQueryUserToken(sessionId, out var token)) return false;
+        if (!WTSQueryUserToken(unchecked((int)sessionId), out var token)) return false;
         token.Dispose();
         return true;
     }
 
-    /// <summary>
-    /// How long to keep trying for the console user's token before giving up.
-    ///
-    /// At sign-in the session exists before a user token is available for it, and
-    /// StartSet's login triggers fire inside that window. A single attempt at the
-    /// exact moment of logon is the thinnest possible sampling of a race, and the
-    /// observed failure -- "a token that does not exist" -- is a timing condition,
-    /// not a permanent one.
-    ///
-    /// The cost is paid at most once per run: as soon as the token exists, every
-    /// later script in the same pass gets it on the first attempt.
-    /// </summary>
-    private static readonly TimeSpan TokenWait = TimeSpan.FromSeconds(60);
-
-    private static readonly TimeSpan TokenPollInterval = TimeSpan.FromSeconds(1);
-
-    /// <summary>
-    /// Set once this process has waited out the full <see cref="TokenWait"/> without
-    /// ever seeing a token.
-    ///
-    /// Without this the wait is paid per script rather than per run. StartSet
-    /// executes payloads sequentially, so on a machine where impersonation is
-    /// genuinely unavailable a dozen payloads would each block for the full
-    /// minute -- turning a one-minute wait into a quarter-hour of login. Once the
-    /// first script has established that nothing is coming, the rest still make a
-    /// single attempt each (a session appearing late is still picked up) but no
-    /// longer wait for it.
-    ///
-    /// Static, so the memo lasts exactly one run of the process, which is the
-    /// scope this belongs at.
-    /// </summary>
-    private static bool _tokenWaitExhausted;
+    private static readonly UserSessionTokenProvider Tokens = new(
+        ShellReadiness.GetActiveConsoleSessionId,
+        WTSQueryUserToken,
+        TimeSpan.FromSeconds(60),
+        TimeSpan.FromSeconds(1));
 
     /// <summary>
     /// Runs <paramref name="fileName"/> with <paramref name="arguments"/> as the
-    /// console user. Returns Launched=false (with FailureReason set) when no user
+    /// selected user. Returns Launched=false (with FailureReason set) when no user
     /// session is available or the token could not be obtained.
     ///
     /// A false result means the payload did not run. Callers must not treat it as
@@ -89,11 +62,13 @@ public static class UserSessionLauncher
     /// in session 0 cannot have its intended effect, and reporting that as success
     /// is what kept this failure invisible.
     /// </summary>
+    /// <param name="sessionId">Target desktop session; null selects the physical console.</param>
     public static LaunchResult Run(
         string fileName,
         string arguments,
         string workingDirectory,
-        TimeSpan timeout)
+        TimeSpan timeout,
+        int? sessionId = null)
     {
         // Each native step is timed and logged.
         //
@@ -112,9 +87,9 @@ public static class UserSessionLauncher
         void Step(string call) =>
             StartSetLogger.Debug("User-session launch: {Call} at {Elapsed:N1}s", call, launchTimer.Elapsed.TotalSeconds);
 
-        Step("acquiring console user token");
+        Step($"acquiring user token for {(sessionId.HasValue ? $"session {sessionId}" : "the console session")}");
 
-        if (!TryGetConsoleUserToken(out var userToken, out var failure))
+        if (!Tokens.TryGetToken(sessionId, out var userToken, out var failure))
             return Fail(failure);
 
         using (userToken)
@@ -158,68 +133,6 @@ public static class UserSessionLauncher
                     if (envBlock != IntPtr.Zero) DestroyEnvironmentBlock(envBlock);
                 }
             }
-        }
-    }
-
-    /// <summary>
-    /// Waits for a console session that has a user token, up to <see cref="TokenWait"/>.
-    /// </summary>
-    private static bool TryGetConsoleUserToken(
-        out SafeAccessTokenHandle token,
-        out string failureReason)
-    {
-        var wait = _tokenWaitExhausted ? TimeSpan.Zero : TokenWait;
-        var deadline = DateTime.UtcNow + wait;
-        var attempts = 0;
-        var lastReason = "no active console session";
-
-        while (true)
-        {
-            attempts++;
-
-            var sessionId = WTSGetActiveConsoleSessionId();
-            if (sessionId == 0xFFFFFFFF)
-            {
-                lastReason = "no active console session";
-            }
-            else if (WTSQueryUserToken(sessionId, out var candidate))
-            {
-                if (attempts > 1)
-                {
-                    StartSetLogger.Information(
-                        "Console user token became available for session {SessionId} after {Attempts} attempts.",
-                        sessionId, attempts);
-                }
-
-                token = candidate;
-                failureReason = string.Empty;
-                return true;
-            }
-            else
-            {
-                lastReason = $"WTSQueryUserToken failed for session {sessionId}: " +
-                             $"{new Win32Exception(Marshal.GetLastWin32Error()).Message}";
-            }
-
-            if (DateTime.UtcNow >= deadline)
-            {
-                token = null!;
-                if (wait > TimeSpan.Zero)
-                {
-                    _tokenWaitExhausted = true;
-                    failureReason = attempts == 1
-                        ? lastReason
-                        : $"{lastReason} (still unavailable after {TokenWait.TotalSeconds:F0}s, {attempts} attempts)";
-                }
-                else
-                {
-                    failureReason = $"{lastReason} (not waiting again; " +
-                                    $"an earlier payload in this run already waited {TokenWait.TotalSeconds:F0}s)";
-                }
-                return false;
-            }
-
-            Thread.Sleep(TokenPollInterval);
         }
     }
 
@@ -473,7 +386,7 @@ public static class UserSessionLauncher
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool WTSQueryUserToken(uint sessionId, out SafeAccessTokenHandle token);
+    private static extern bool WTSQueryUserToken(int sessionId, out SafeAccessTokenHandle token);
 
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
