@@ -197,7 +197,7 @@ public class TriggerWatcherWorker : BackgroundService
     /// in. On a shared lab machine that can be days.
     ///
     /// Safe by construction rather than by care: LoginOnce and LoginEvery are
-    /// IsUserContext, so UserContextExecution.TryRunAsConsoleUser owns them. With
+    /// IsUserContext, so UserContextExecution.TryRunAsUser owns them. With
     /// nobody signed in they are reported Deferred, never run as SYSTEM. Triggering
     /// this at the login window is therefore a no-op rather than a way to land HKCU
     /// writes in SYSTEM's hive.

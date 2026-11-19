@@ -10,6 +10,12 @@ StartSet provides a robust framework for running scripts at various points durin
 - **Login scripts**: Run when users log in (user or privileged context)
 - **On-demand scripts**: Run when triggered manually or via trigger files
 
+Automatic user-context login scripts run in the desktop session that signed in,
+including Remote Desktop sessions. Desktop readiness checks and process launch use
+that same session. If its user token is unavailable, scripts are deferred rather
+than run in another user's console session. On-demand runs without a target
+session continue to use the physical console.
+
 ## Features
 
 - Full parity with macadmins/outset functionality

@@ -22,7 +22,8 @@ public class PowerShellProcessor : IScriptProcessor
     public async Task<ExecutionResult> ExecuteAsync(
         ScriptPayload script,
         TimeSpan timeout,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? sessionId = null)
     {
         var result = new ExecutionResult
         {
@@ -48,8 +49,8 @@ public class PowerShellProcessor : IScriptProcessor
             //
             // Returns null for payload types that belong in SYSTEM context, which
             // fall through to the execution below.
-            var userContext = UserContextExecution.TryRunAsConsoleUser(
-                script, psPath, scriptArguments, scriptWorkingDirectory, timeout, result.StartTime);
+            var userContext = UserContextExecution.TryRunAsUser(
+                script, psPath, scriptArguments, scriptWorkingDirectory, timeout, result.StartTime, sessionId);
             if (userContext is not null)
                 return userContext;
 

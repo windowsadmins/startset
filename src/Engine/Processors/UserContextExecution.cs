@@ -31,7 +31,7 @@ internal static class UserContextExecution
     };
 
     /// <summary>
-    /// Runs a user-context payload in the console user's session.
+    /// Runs a user-context payload in the target user's session.
     ///
     /// Returns <c>null</c> when <paramref name="script"/> does not need a user
     /// session, in which case the caller proceeds with its own SYSTEM execution.
@@ -44,18 +44,19 @@ internal static class UserContextExecution
     /// skips administrators matches SYSTEM and exits 0. That last case is the
     /// dangerous one, because it reports success.
     /// </summary>
-    public static ExecutionResult? TryRunAsConsoleUser(
+    public static ExecutionResult? TryRunAsUser(
         ScriptPayload script,
         string fileName,
         string arguments,
         string workingDirectory,
         TimeSpan timeout,
-        DateTimeOffset startTime)
+        DateTimeOffset startTime,
+        int? sessionId = null)
     {
         if (!RequiresUserContext(script.PayloadType))
             return null;
 
-        var asUser = UserSessionLauncher.Run(fileName, arguments, workingDirectory, timeout);
+        var asUser = UserSessionLauncher.Run(fileName, arguments, workingDirectory, timeout, sessionId);
 
         if (asUser.Launched)
         {
@@ -97,13 +98,13 @@ internal static class UserContextExecution
         // Not run. See the class comment for why there is no SYSTEM fallback.
         var reason = asUser.FailureReason ?? "unknown";
         StartSetLogger.Warning(
-            "Deferred {Script}: could not reach the console user's session ({Reason}). " +
+            "Deferred {Script}: could not reach the target user's session ({Reason}). " +
             "The script did NOT run. It is user-context, so running it as SYSTEM would not have applied it either.",
             script.FileName, reason);
 
         var deferred = ExecutionResult.Deferred(
             script,
-            $"Not run: could not start in the console user's session ({reason})");
+            $"Not run: could not start in the target user's session ({reason})");
         deferred.StartTime = startTime;
         deferred.EndTime = DateTimeOffset.UtcNow;
         return deferred;

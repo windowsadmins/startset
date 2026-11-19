@@ -212,7 +212,8 @@ public class LogonEventWorker : BackgroundService
                 var results = await engine.ExecuteAsync(
                     [PayloadType.LoginOnce, PayloadType.LoginEvery],
                     username: username,
-                    waitForNetwork: false);
+                    waitForNetwork: false,
+                    sessionId: sessionId);
 
                 // Always run login-privileged-every scripts (elevated, every login)
                 var privEveryResults = await engine.ExecuteAsync(
