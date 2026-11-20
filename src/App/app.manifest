@@ -4,7 +4,7 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- Runs unelevated; Unlock and the privileged runs ask for elevation when needed. -->
+        <!-- Runs unelevated; saving settings and the privileged runs ask for elevation when needed. -->
         <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>

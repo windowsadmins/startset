@@ -5,27 +5,18 @@ using System.Security.Principal;
 namespace StartSet.Infrastructure.Gui;
 
 /// <summary>
-/// Decisions behind the GUI's read-only Prefs tab. Settings live in HKLM, so they can only be
-/// changed by an elevated process: a non-elevated GUI shows them read-only and "Unlock"
-/// relaunches the app itself through UAC, opening straight on the Prefs tab. There is no
-/// SYSTEM service and no user-writable file in the path.
+/// Decisions behind the Prefs tab's editing. Every setting policy does not set can be edited
+/// in the normal, unelevated app; the edits are held until Save. Settings live in HKLM, so a
+/// non-elevated app saves by starting its own executable elevated through UAC with
+/// <see cref="SettingsPayload.ApplyArgument"/>, which writes them headless and exits.
 /// </summary>
 public static class PrefsElevation
 {
-    /// <summary>Command-line switch that opens the GUI on the Prefs tab.</summary>
-    public const string PrefsArgument = "--prefs";
-
     /// <summary>Win32 ERROR_CANCELLED: the user dismissed the UAC prompt.</summary>
     public const int ErrorCancelled = 1223;
 
-    /// <summary>True when the command line asks the GUI to open on the Prefs tab.</summary>
-    public static bool OpensOnPrefs(IEnumerable<string>? args)
-        => args?.Any(a => string.Equals(a?.Trim(), PrefsArgument, StringComparison.OrdinalIgnoreCase)) == true;
-
-    /// <summary>
-    /// A setting can be edited only by an elevated process, and never when policy manages it.
-    /// </summary>
-    public static bool CanEdit(bool isElevated, bool isPolicyManaged) => isElevated && !isPolicyManaged;
+    /// <summary>A setting can be edited unless policy sets it.</summary>
+    public static bool CanEdit(bool isPolicyManaged) => !isPolicyManaged;
 
     /// <summary>True when the exception is the user cancelling the UAC prompt, not a real failure.</summary>
     public static bool IsElevationCancelled(Exception? ex)
@@ -48,14 +39,18 @@ public static class PrefsElevation
         }
     }
 
-    /// <summary>Start info that relaunches <paramref name="exePath"/> elevated on the Prefs tab.</summary>
-    public static ProcessStartInfo BuildElevatedRelaunch(string exePath)
+    /// <summary>
+    /// Start info that runs <paramref name="exePath"/> elevated to write the settings it reads
+    /// from the pipe <paramref name="pipeName"/> to machine settings, with no window.
+    /// </summary>
+    public static ProcessStartInfo BuildElevatedApply(string exePath, string pipeName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(exePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
         return new ProcessStartInfo
         {
             FileName = exePath,
-            Arguments = PrefsArgument,
+            Arguments = $"{SettingsPayload.ApplyArgument} {pipeName}",
             UseShellExecute = true,
             Verb = "runas",
             WorkingDirectory = Path.GetDirectoryName(exePath) ?? string.Empty,

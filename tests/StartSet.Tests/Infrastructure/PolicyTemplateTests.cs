@@ -138,7 +138,7 @@ public class PolicyTemplateTests
 
         svc.Sources[name].Should().Be(SettingSource.Policy, $"{name} written as the ADMX writes it must be read as policy");
         svc.IsManaged(name).Should().BeTrue();
-        PrefsElevation.CanEdit(isElevated: true, isPolicyManaged: svc.Sources[name] == SettingSource.Policy).Should().BeFalse();
+        PrefsElevation.CanEdit(isPolicyManaged: svc.Sources[name] == SettingSource.Policy).Should().BeFalse();
     }
 
     [Fact]

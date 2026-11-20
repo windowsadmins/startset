@@ -44,9 +44,8 @@ public sealed partial class MainWindow : Window
 
         var args = Environment.GetCommandLineArgs().Skip(1).ToArray();
 
-        // Open on Prefs when asked to (the elevated relaunch from Unlock passes --prefs);
-        // --tab run|logs opens another tab.
-        var tab = PrefsElevation.OpensOnPrefs(args) ? "prefs" : TabArgument(args) ?? "prefs";
+        // Open on Prefs; --tab run|logs opens another tab.
+        var tab = TabArgument(args) ?? "prefs";
         NavView.SelectedItem = NavView.MenuItems.OfType<NavigationViewItem>()
             .FirstOrDefault(i => (string?)i.Tag == tab) ?? NavView.MenuItems[0];
     }
